@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# Add `<Task>: <work> <id> <name>` trailers to the commit message for the tasks that staged
+# changes close, start ([~]) or document (new RECORD / training unit). Never blocks a commit.
+# The trailer and record field name follow the repository language (bin/lib/vocab.sh):
+# `Task:` by default, `Tarea:` with `language=es` in .harness.conf.
+# Enable with: git config core.hooksPath <harness>/bin/hooks
+MSG="${1:-}"
+SOURCE="${2:-}"
+MAX=10
+
+SELF="$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")"
+HERE="$(cd "$(dirname "$SELF")" && pwd)"
+# shellcheck source-path=SCRIPTDIR source=../lib/vocab.sh
+. "$HERE/../lib/vocab.sh" 2>/dev/null || exit 0
+
+# shortname <text>: cut at first ". ", " → ", " — " or "~~", strip trailing dots/spaces, 60 chars max
+shortname() {
+  local s="$1" d
+  s="${s#"${s%%[![:space:]]*}"}"
+  for d in ". " " → " " — " "~~"; do s="${s%%"$d"*}"; done
+  while :; do
+    case "$s" in
+      *[.[:space:]]) s="${s%?}" ;;
+      *) break ;;
+    esac
+  done
+  s="$( LC_ALL=en_US.UTF-8; printf '%s' "${s:0:60}" )"
+  if command -v iconv >/dev/null 2>&1; then
+    s="$(printf '%s' "$s" | iconv -c -f UTF-8 -t UTF-8 2>/dev/null)" || true
+  fi
+  while :; do
+    case "$s" in
+      *[.[:space:]]) s="${s%?}" ;;
+      *) break ;;
+    esac
+  done
+  printf '%s' "$s"
+}
+
+ENTRIES=""
+SEEN=""
+COUNT=0
+
+# add <path> <id> <rest>: record one (work-slug, id, name) once
+add() {
+  local path="$1" id="$2" rest="$3" folder slug name key
+  folder="${path#work/*/}"
+  folder="${folder%%/*}"
+  slug="$(printf '%s' "$folder" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}\.//')"
+  key="$slug"$'\t'"$id"
+  case "$SEEN" in
+    *$'\n'"$key"$'\n'*) return 0 ;;
+  esac
+  SEEN="$SEEN"$'\n'"$key"$'\n'
+  name="$(shortname "$rest")"
+  ENTRIES="$ENTRIES$slug $id${name:+ $name}"$'\n'
+  COUNT=$((COUNT + 1))
+}
+
+# task_line <path>: first `**<Task>:** <id> <name>` of the staged content
+task_line() {
+  local path="$1" line field re
+  field="$(vocab_re "$VOC_TASK")"
+  re="^\*\*${field}:\*\*[[:space:]]+([0-9]+(\.[0-9]+)*)([[:space:]]+(.*))?$"
+  line="$(git show ":$path" 2>/dev/null | grep -m1 -E "^\*\*${field}:\*\*" | tr -d '\r')" || true
+  if [[ "$line" =~ $re ]]; then
+    add "$path" "${BASH_REMATCH[1]}" "${BASH_REMATCH[4]}"
+  fi
+}
+
+collect() {
+  local path status line
+  local re_roadmap='^work/[^/]+/[^/]+/ROADMAP/[^/]+\.md$'
+  local re_record='^work/[^/]+/[^/]+/RECORD/[^/]+\.md$'
+  local re_train='^work/[^/]+/[^/]+/training/[^/]+\.md$'
+  local re_struck='^\+-[[:space:]]+~~\*\*([0-9]+(\.[0-9]+)*)\*\*[[:space:]]*(.*)$'
+  local re_wip='^\+-[[:space:]]+\*\*([0-9]+(\.[0-9]+)*)\*\*[[:space:]]+\[~\][[:space:]]*(.*)$'
+  local changes first second
+
+  changes="$(git -c core.quotepath=off diff --cached --name-status -M --no-color -- 'work' 2>/dev/null)" || return 0
+  [ -n "$changes" ] || return 0
+
+  # ROADMAP: added struck or in-progress items
+  while IFS=$'\t' read -r status first second; do
+    path="${second:-$first}"
+    [[ "$path" =~ $re_roadmap ]] || continue
+    case "$status" in A* | M* | R*) ;; *) continue ;; esac
+    while IFS= read -r line; do
+      line="$(printf '%s' "$line" | tr -d '\r')"
+      if [[ "$line" =~ $re_struck ]] || [[ "$line" =~ $re_wip ]]; then
+        add "$path" "${BASH_REMATCH[1]}" "${BASH_REMATCH[3]}"
+      fi
+    done <<EOF
+$(git -c core.quotepath=off diff --cached --unified=0 --no-color -- "$path" 2>/dev/null | grep -E '^\+[^+]|^\+$' )
+EOF
+  done <<EOF
+$changes
+EOF
+
+  # RECORD added or renamed
+  while IFS=$'\t' read -r status first second; do
+    path="${second:-$first}"
+    [[ "$path" =~ $re_record ]] || continue
+    case "$status" in A* | R*) task_line "$path" ;; esac
+  done <<EOF
+$changes
+EOF
+
+  # training units added
+  while IFS=$'\t' read -r status first second; do
+    path="${second:-$first}"
+    [[ "$path" =~ $re_train ]] || continue
+    case "$status" in A*) task_line "$path" ;; esac
+  done <<EOF
+$changes
+EOF
+}
+
+main() {
+  [ -n "$MSG" ] && [ -w "$MSG" ] || return 0
+  case "$SOURCE" in merge | squash) return 0 ;; esac
+  local top
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  cd "$top" || return 0
+  vocab_load "$top" 2>/dev/null
+  collect
+  [ -n "$ENTRIES" ] || return 0
+
+  local args=() n=0 entry
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    n=$((n + 1))
+    [ "$n" -le "$MAX" ] || break
+    args+=(--trailer "$VOC_TASK: $entry")
+  done <<EOF
+$ENTRIES
+EOF
+  if [ "$COUNT" -gt "$MAX" ]; then
+    args+=(--trailer "$VOC_TASK: (+$((COUNT - MAX)) $VOC_MORE)")
+  fi
+  [ "${#args[@]}" -gt 0 ] || return 0
+  git interpret-trailers --in-place --if-exists addIfDifferent "${args[@]}" "$MSG" >/dev/null 2>&1
+  return 0
+}
+
+main || true
+exit 0

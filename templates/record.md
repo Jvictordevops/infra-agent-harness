@@ -1,27 +1,27 @@
 # {{TITLE}}
 
-<!-- Only banners may be added here later: '> **Corregido por:** [new](<new>.done.md)' or '> **Ids renumerados en:** [..](<record>.done.md)'; never edit the content -->
+<!-- Only banners may be added here later: '> **{{VOC_CORRECTED_BY}}:** [new](<new>.done.md)' or '> **{{VOC_IDS_RENUMBERED_IN}}:** [..](<record>.done.md)'; never edit the content -->
 
-**Tarea:** <id> <short name>  <!-- if the record belongs to a task; delete the line otherwise -->
+**{{VOC_TASK}}:** <id> <short name>  <!-- if the record belongs to a task; delete the line otherwise -->
 
-**Contexto:** 1-3 lines + link to the previous record if this continues it.
+**{{VOC_CONTEXT}}:** 1-3 lines + link to the previous record if this continues it.
 
-## Pregunta / Problema
+## {{VOC_QUESTION}}
 
-## Hechos
+## {{VOC_FACTS}}
 
 <!-- Only verified facts, linked to evidence/ -->
 
-## Propuesta / Resultado
+## {{VOC_PROPOSAL}}
 
-## Descartado
+## {{VOC_DISCARDED}}
 
 <!-- And why -->
 
-## Coste / Riesgo
+## {{VOC_COST}}
 
-## Abierto
+## {{VOC_OPEN}}
 
 <!-- Mandatory. Feeds README "Next steps" and the next ROADMAP revision -->
 
-Confianza: alta|media|baja
+{{VOC_CONFIDENCE}}: {{VOC_CONFIDENCE_LEVELS}}

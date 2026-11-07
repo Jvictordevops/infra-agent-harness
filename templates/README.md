@@ -20,7 +20,7 @@ TODO: 2-3 lines. What "done" means.
 
 ## Objectives
 
-| Id | Objetivo | Hecho cuando |
+| Id | {{VOC_OBJECTIVE}} | {{VOC_DONE_WHEN}} |
 |---|---|---|
 | **1** | TODO | **1.1** TODO (each criterion = id of its verification task) |
 
@@ -61,7 +61,7 @@ TODO
 
 ## Root cause
 
-TODO. Confianza: baja
+TODO. {{VOC_CONFIDENCE}}: {{VOC_CONFIDENCE_LOW}}
 <!-- /type:inc -->
 <!-- type:inv -->
 
@@ -75,7 +75,7 @@ TODO
 
 ## Recommendation
 
-TODO. Confianza: baja
+TODO. {{VOC_CONFIDENCE}}: {{VOC_CONFIDENCE_LOW}}
 <!-- /type:inv -->
 <!-- type:poc -->
 
