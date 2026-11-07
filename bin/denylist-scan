@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# denylist-scan — fail if tracked files contain anything that identifies a real company or person.
+#
+# Two layers:
+#   1. Built-in generic patterns: AWS account ids, ARNs with an account, access keys, private IPs,
+#      e-mail addresses. Documentation values (000000000000, 123456789012, 111122223333, example.com,
+#      acme) are allowed.
+#   2. Your own denylist, never committed: one extended regex per line, '#' for comments.
+#      Path: $IAH_DENYLIST, else ~/.config/infra-agent-harness/denylist.txt
+#      Put there your company names, internal domains, hostnames, user names, people.
+#
+# Usage: bin/denylist-scan [--staged] [--no-builtin] [path...]
+#   --staged      scan the staged version of files (for a pre-commit hook)
+#   --no-builtin  only your denylist
+#   path...       limit to these paths (default: every tracked file)
+# Exit: 0 clean · 1 matches found · 2 usage or setup error
+set -uo pipefail
+
+STAGED=0 BUILTIN=1 paths=()
+for a in "$@"; do
+  case "$a" in
+    --staged) STAGED=1 ;;
+    --no-builtin) BUILTIN=0 ;;
+    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    -*) echo "denylist-scan: unknown option $a" >&2; exit 2 ;;
+    *) paths+=("$a") ;;
+  esac
+done
+
+git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "denylist-scan: not inside a git repository" >&2; exit 2; }
+cd "$(git rev-parse --show-toplevel)" || exit 2
+
+DENYLIST="${IAH_DENYLIST:-$HOME/.config/infra-agent-harness/denylist.txt}"
+rules=()   # name|pattern
+if [ "$BUILTIN" = 1 ]; then
+  rules+=(
+    "aws-account-id|(^|[^0-9])[0-9]{12}([^0-9]|$)"
+    "arn-with-account|arn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:[0-9]{12}:"
+    "aws-access-key|(AKIA|ASIA)[A-Z0-9]{16}"
+    "private-ip|(^|[^0-9.])(10\.[0-9]{1,3}|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}([^0-9]|$)"
+    "email|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
+  )
+fi
+if [ -s "$DENYLIST" ]; then
+  n=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|'#'*) continue ;; esac
+    n=$((n + 1)); rules+=("denylist:$n|$line")
+  done < "$DENYLIST"
+else
+  echo "denylist-scan: no personal denylist at $DENYLIST — only generic patterns are checked" >&2
+fi
+
+# Values that look sensitive but are documentation placeholders
+ALLOW='(^|[^0-9])(000000000000|123456789012|111122223333|444455556666)([^0-9]|$)|@(example\.(com|org|net)|acme\.(com|example)|users\.noreply\.github\.com)|noreply@|(^|[^0-9])(10\.0\.0\.0|192\.168\.0\.0|172\.16\.0\.0)/'
+
+if [ "$STAGED" = 1 ]; then
+  mapfile -t files < <(git diff --cached --name-only --diff-filter=ACMR -- "${paths[@]}")
+  show() { git show ":$1"; }
+else
+  mapfile -t files < <(git ls-files -- "${paths[@]}")
+  show() { cat -- "$1"; }
+fi
+
+found=0
+for f in "${files[@]}"; do
+  [ "$f" = "${DENYLIST#"$PWD"/}" ] && continue
+  content="$(show "$f" 2>/dev/null)" || continue
+  printf '%s' "$content" | grep -qI . || continue        # skip binary files
+  for rule in "${rules[@]}"; do
+    name="${rule%%|*}" pattern="${rule#*|}"
+    hits="$(printf '%s\n' "$content" | grep -nE -- "$pattern" | grep -vE -- "$ALLOW" || true)"
+    if [ -n "$hits" ]; then
+      found=1
+      printf '%s\n' "$hits" | head -5 | sed "s|^|$f:|; s|$|   [$name]|"
+    fi
+  done
+done
+
+if [ "$found" = 1 ]; then
+  echo "denylist-scan: matches found. Remove them, or use a documentation value (123456789012, example.com, acme)." >&2
+  exit 1
+fi
+echo "denylist-scan: clean (${#files[@]} files, ${#rules[@]} rules)"

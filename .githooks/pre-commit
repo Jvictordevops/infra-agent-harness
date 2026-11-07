@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Contributor hook for this repository: nothing that identifies a company or a person gets committed.
+# Enable once: git config core.hooksPath .githooks
+set -uo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+"$ROOT/bin/denylist-scan" --staged || { echo "pre-commit: commit blocked by denylist-scan" >&2; exit 1; }
+if command -v gitleaks >/dev/null; then
+  gitleaks protect --staged --redact --no-banner -v >/dev/null 2>&1 || { echo "pre-commit: gitleaks found a secret (run: gitleaks protect --staged -v)" >&2; exit 1; }
+else
+  echo "pre-commit: gitleaks not installed, secret scan skipped" >&2
+fi
