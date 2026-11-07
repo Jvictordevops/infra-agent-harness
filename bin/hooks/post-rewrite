@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# After a pull --rebase: refresh the installed harness. Never blocks.
+[ "${1:-}" = "rebase" ] || exit 0
+"$(git rev-parse --show-toplevel)/bin/link-harness" --quiet || true

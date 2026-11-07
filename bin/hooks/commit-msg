@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Block AI attribution in commits (GLOBAL.md, "Commits"): tool Co-authored-by trailers, "Generated with",
+# session trailers, model names, and an agent as author or committer. Naming a product or a path
+# (Claude Code, ~/.copilot, .claude-plugin) is allowed: the rule is about attribution.
+# Enable with: git config core.hooksPath bin/hooks · tests: tests/commit-msg.sh
+set -uo pipefail
+
+MSG_FILE="${1:?usage: commit-msg <message-file>}"
+AI='claude|anthropic|copilot|openai|chatgpt|gpt-?[0-9]|gemini|codex|cursor|sonnet|opus|haiku|\[bot\]'
+errors=()
+
+body="$(grep -v '^#' "$MSG_FILE" || true)"
+
+if printf '%s\n' "$body" | grep -qiE "^co-authored-by:.*($AI)"; then
+  errors+=("tool Co-authored-by trailer")
+fi
+if printf '%s\n' "$body" | grep -qiE "generated (with|by)[^[:alnum:]]*.{0,20}($AI)|🤖"; then
+  errors+=("'Generated with' line")
+fi
+if printf '%s\n' "$body" | grep -qiE '^[a-z-]*session:|claude\.ai/code/session'; then
+  errors+=("agent session trailer")
+fi
+if printf '%s\n' "$body" | grep -qiE '(^|[^[:alnum:]_-])(sonnet|opus|haiku|chatgpt|gpt-?[0-9])([^[:alnum:]_]|$)'; then
+  errors+=("model name in the message")
+fi
+for who in "$(git var GIT_AUTHOR_IDENT 2>/dev/null)" "$(git var GIT_COMMITTER_IDENT 2>/dev/null)"; do
+  if printf '%s' "${who% * *}" | grep -qiE "$AI"; then
+    errors+=("agent identity: ${who% * *} (set user.name/user.email to the user's, ai-workflow-standard 6.28)")
+  fi
+done
+
+if [ "${#errors[@]}" -gt 0 ]; then
+  echo "commit-msg: commit blocked — no AI attribution in commits (GLOBAL.md):" >&2
+  printf '  - %s\n' "${errors[@]}" >&2
+  exit 1
+fi
+exit 0

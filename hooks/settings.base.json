@@ -1,0 +1,50 @@
+{
+  "_comment": "Base merged into ~/.claude/settings.json by bin/link-harness (union, never removes). __ROOT__ = this repo. deny = same family as hooks/block-destructive-platform; ask = GLOBAL.md 'Defensivos' (confirm and show the exact command).",
+  "permissions": {
+    "deny": [
+      "Bash(terraform destroy *)",
+      "Bash(terraform * destroy)",
+      "Bash(terraform * destroy *)",
+      "Bash(terraform state rm *)",
+      "Bash(terraform * state rm *)",
+      "Bash(kubectl delete *)",
+      "Bash(kubectl * delete *)",
+      "Bash(kubectl drain *)",
+      "Bash(kubectl * drain *)",
+      "Bash(helm uninstall *)",
+      "Bash(helm * uninstall *)",
+      "Bash(aws * delete-*)",
+      "Bash(aws * terminate-*)",
+      "Bash(aws s3 rb *)",
+      "Bash(aws s3 rm *)"
+    ],
+    "ask": [
+      "Bash(git push --force*)",
+      "Bash(git push * --force*)",
+      "Bash(git push -f *)",
+      "Bash(git push * -f *)",
+      "Bash(git reset --hard*)",
+      "Bash(git reset * --hard*)",
+      "Bash(terraform apply *)",
+      "Bash(terraform * apply)",
+      "Bash(terraform * apply *)",
+      "Bash(kubectl apply *)",
+      "Bash(kubectl * apply *)",
+      "Bash(helm upgrade *)",
+      "Bash(helm * upgrade *)",
+      "Bash(helm install *)",
+      "Bash(helm * install *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "__ROOT__/hooks/ro-guard/ro-guard.sh" },
+          { "type": "command", "command": "__ROOT__/hooks/block-destructive-platform/block-destructive-platform.sh" }
+        ]
+      }
+    ]
+  }
+}

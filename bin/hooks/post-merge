@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# After a pull (merge): refresh the installed harness. Never blocks.
+"$(git rev-parse --show-toplevel)/bin/link-harness" --quiet || true

@@ -1,0 +1,245 @@
+#!/usr/bin/env bash
+# Read-only executor (STANDARD §11, docs/tools.md): runs ONE allow-listed read-only command, here or on
+# another machine over SSH, for executors and their sub-agents. Cloud roles are usually admin, so the
+# guard is ours: this allow-list + the ro-guard hook (hooks/ro-guard), which in read-only mode blocks
+# aws/kubectl/helm/ssh… that do not go through bin/ro.
+#
+# Usage: bin/ro [--host <ssh-alias>] [--check] <tool> <args…>
+#   --host   run on that machine (its own copy of bin/ro ($RO_REMOTE_BIN, default ~/infra-agent-harness/bin/ro) validates again, with its paths)
+#   --check  validate only: prints "ok" or the reason, runs nothing
+#   bin/ro mode on [reason] | status     read-only mode on this machine (the hook enforces it)
+#   bin/ro mode off                      only the user, from a terminal (the hook blocks agents)
+# Tools (fixed shape, so the check is simple):
+#   aws <service> <operation> … --profile P       describe-/list-/get-/batch-get-/lookup-/search-, s3 ls
+#   kubectl <verb> … --context C                  get, describe, logs, top, events, api-resources, auth can-i…
+#   helm <list|status|history|get metadata> … --kube-context C
+#   git -C <dir> <log|show|diff|grep|status|branch…> …
+#   cat|head|tail|ls|find|grep|wc|stat <paths under RO_ROOTS>
+# Limits (optional, comma lists): RO_PROFILES, RO_CONTEXTS · RO_ROOTS (default $HOME/code).
+# Never: secrets (Secrets, get-secret-value, --with-decryption, tokens), credentials, sensitive files.
+# No shell inside: no pipes, redirections or chaining; filter the output locally (jq, grep).
+set -euo pipefail
+set -f
+
+MODE="${RO_MODE_FILE:-$HOME/.config/infra-agent-harness/ro-mode}"
+
+usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+deny() { echo "ro: denied: $*" >&2; exit 3; }
+
+in_list() { # $1 value, $2 comma list (empty = any)
+  [ -z "${2-}" ] && return 0
+  case ",$2," in *",$1,"*) return 0 ;; esac
+  return 1
+}
+
+opt_val() { # $1 option, rest args -> value of "--opt X" or "--opt=X"
+  local o="$1"; shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      "$o") echo "${2-}"; return 0 ;;
+      "$o="*) echo "${1#*=}"; return 0 ;;
+    esac
+    shift
+  done
+  return 1
+}
+
+lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
+check_path() { # $1 path; REMOTE=1 -> textual checks only (the other machine resolves it)
+  local p="$1" r root ok=1 IFS
+  case "$p" in *..*) deny "path with '..': $p" ;; esac
+  case "$p" in "~/"*) p="$HOME/${p#\~/}" ;; "~") p="$HOME" ;; esac
+  r="$p"
+  if [ "${REMOTE-0}" = 0 ]; then
+    r="$(realpath "$p" 2>/dev/null)" || deny "path not found: $1"
+    IFS=,
+    for root in ${RO_ROOTS:-$HOME/code}; do
+      root="$(realpath "$root" 2>/dev/null)" || continue
+      case "$r/" in "$root/"*) ok=0 ;; esac
+    done
+    [ "$ok" = 0 ] || deny "path outside RO_ROOTS (${RO_ROOTS:-$HOME/code}): $1"
+  fi
+  case "$r" in
+    */.git/config|*/.ssh|*/.ssh/*|*/.aws|*/.aws/*|*/.kube|*/.kube/*|*.tfstate|*.tfstate.*|*/.env|*/.env.*|*.pem|*.key|*kubeconfig*|*/.netrc|*/.npmrc)
+      deny "sensitive path: $1" ;;
+  esac
+}
+
+check_aws() {
+  local svc="${1-}" op="${2-}" p a
+  [[ "$svc" =~ ^[a-z0-9-]+$ && "$op" =~ ^[a-z0-9-]+$ ]] || deny "aws: use 'aws <service> <operation> …'"
+  p="$(opt_val --profile "$@")" || deny "aws: --profile is mandatory"
+  in_list "$p" "${RO_PROFILES-}" || deny "aws: profile $p not in RO_PROFILES ($RO_PROFILES)"
+  case "$op" in
+    *token*|*password*|*secret-value*|*credential*|*login*|*decrypt*) deny "aws: $op returns secrets or credentials" ;;
+  esac
+  case "$svc $op" in
+    "sts get-caller-identity"|"s3 ls") ;;
+    sts\ *|sso\ *|sso-oidc\ *|"s3api get-object"*|"secretsmanager get-"*) deny "aws: $svc $op not allowed" ;;
+    s3\ *) deny "aws: only 's3 ls' in s3" ;;
+    *) [[ "$op" =~ ^(describe|list|get|batch-get|lookup|search)- ]] || [ "$op" = filter-log-events ] \
+         || deny "aws: $op is not read-only (describe-/list-/get-/batch-get-/lookup-/search-)" ;;
+  esac
+  for a in "$@"; do
+    case "$a" in --with-decryption|--endpoint-url|--endpoint-url=*|--debug) deny "aws: $a not allowed" ;; esac
+  done
+}
+
+is_secret_res() { # $1 kubectl arg -> 0 if it names Secrets
+  local t IFS=',/'
+  for t in $1; do
+    case "$(lower "$t")" in secret|secrets|secret.*|secrets.*) return 0 ;; esac
+  done
+  return 1
+}
+
+check_kubectl() {
+  local ctx verb="${1-}" sub="${2-}" a
+  ctx="$(opt_val --context "$@")" || deny "kubectl: --context is mandatory"
+  in_list "$ctx" "${RO_CONTEXTS-}" || deny "kubectl: context $ctx not in RO_CONTEXTS ($RO_CONTEXTS)"
+  case "$verb" in
+    get|describe|api-resources|api-versions|version|explain|top|logs|events) ;;
+    auth) case "$sub" in can-i|whoami) ;; *) deny "kubectl: auth $sub" ;; esac ;;
+    cluster-info) [ "$sub" != dump ] || deny "kubectl: cluster-info dump" ;;
+    *) deny "kubectl: verb '$verb' not allowed (the verb goes first)" ;;
+  esac
+  for a in "$@"; do
+    case "$a" in
+      --kubeconfig*|--as|--as=*|--as-group*|--as-uid*|--token*|--server*|-s|--username*|--password*|--client-key*|--client-certificate*|-w|--watch*|-f|--follow*|--filename*)
+        deny "kubectl: $a not allowed" ;;
+      --raw=*/secrets*|/api/*/secrets*) deny "kubectl: Secrets are never read" ;;
+    esac
+    if [ "$verb" = get ] || [ "$verb" = describe ]; then
+      ! is_secret_res "$a" || deny "kubectl: Secrets are never read"
+    fi
+  done
+}
+
+check_helm() {
+  local ctx a
+  ctx="$(opt_val --kube-context "$@")" || deny "helm: --kube-context is mandatory"
+  in_list "$ctx" "${RO_CONTEXTS-}" || deny "helm: context $ctx not in RO_CONTEXTS ($RO_CONTEXTS)"
+  case "${1-}" in
+    list|ls|status|history|version) ;;
+    get) [ "${2-}" = metadata ] || deny "helm: only 'get metadata' (values and manifests may hold secrets)" ;;
+    *) deny "helm: '${1-}' not allowed" ;;
+  esac
+  for a in "$@"; do
+    case "$a" in --kubeconfig*|--kube-token*|--kube-as-*|--kube-apiserver*|--post-renderer*) deny "helm: $a not allowed" ;; esac
+  done
+}
+
+check_git() {
+  [ "${1-}" = -C ] && [ -n "${2-}" ] || deny "git: use 'git -C <dir> <subcommand> …'"
+  check_path "$2"
+  local sub="${3-}" a
+  shift 3 || true
+  case "$sub" in
+    log|show|ls-files|ls-tree|grep|rev-parse|status|diff|blame|describe|for-each-ref|shortlog|cat-file|rev-list|merge-base|show-ref) ;;
+    branch)
+      for a in "$@"; do
+        case "$a" in -a|-r|-v|-vv|-l|--all|--remotes|--list|--show-current|--format=*|--sort=*|--contains=*|--merged=*) ;;
+          *) deny "git branch: only listing options (-a -r -v --list --show-current --format= --sort= --contains=)" ;;
+        esac
+      done ;;
+    remote) [ "${1-}" = -v ] || [ "${1-}" = get-url ] || deny "git remote: only -v or get-url" ;;
+    stash) [ "${1-}" = list ] || deny "git stash: only list" ;;
+    *) deny "git: '$sub' not allowed (read-only subcommands only)" ;;
+  esac
+  for a in "$@"; do
+    case "$a" in --output*|--ext-diff|--no-index|-O*|--open-files-in-pager*) deny "git: $a not allowed" ;; esac
+  done
+}
+
+check_files() { # $1 tool, rest args
+  local tool="$1" a value="" pattern_done=0 opts=1 paths=0
+  shift
+  case "$tool" in grep) for a in "$@"; do case "$a" in -e|-e*|--regexp*|-f|--file*) pattern_done=1 ;; esac; done ;; esac
+  for a in "$@"; do
+    if [ -n "$value" ]; then
+      [ "$value" = path ] && check_path "$a"
+      value=""; continue
+    fi
+    if [ "$opts" = 1 ] && [ "$a" = -- ]; then opts=0; continue; fi
+    if [ "$opts" = 1 ] && [ "${a#-}" != "$a" ]; then
+      case "$tool $a" in
+        "find -delete"|"find -exec"*|"find -ok"*|"find -fprint"*|"find -fls"|"tail -f"|"tail -F"|"tail --follow"*|"tail -r"*)
+          deny "$tool: $a not allowed" ;;
+        "head -n"|"head -c"|"tail -n"|"tail -c"|"grep -e"|"grep -A"|"grep -B"|"grep -C"|"grep -m"|"stat -f"|"stat -c") value=1 ;;
+        "grep -f") value=path ;;
+      esac
+      [ "$tool" = find ] && [ "$paths" = 1 ] && break   # find: predicates start after the paths
+      continue
+    fi
+    if [ "$tool" = grep ] && [ "$pattern_done" = 0 ]; then pattern_done=1; continue; fi
+    if [ "$tool" = find ]; then case "$a" in '('|'!'|')') break ;; esac; fi
+    check_path "$a"; paths=1
+  done
+  if [ "$tool" = find ]; then
+    for a in "$@"; do case "$a" in -delete|-exec|-execdir|-ok|-okdir|-fprint|-fprint0|-fprintf|-fls) deny "find: $a not allowed" ;; esac; done
+  fi
+}
+
+validate() { # $@ = tool args…
+  local tool="${1-}"
+  [ -n "$tool" ] || usage
+  shift
+  case "$tool" in
+    aws) check_aws "$@" ;;
+    kubectl) check_kubectl "$@" ;;
+    helm) check_helm "$@" ;;
+    git) check_git "$@" ;;
+    cat|head|tail|ls|find|grep|wc|stat) check_files "$tool" "$@" ;;
+    *) deny "tool '$tool' not allowed (aws, kubectl, helm, git, cat, head, tail, ls, find, grep, wc, stat)" ;;
+  esac
+}
+
+run() { # $@ = tool args… (already validated)
+  local tool="$1"
+  shift
+  local a args=()
+  for a in "$@"; do # '~/…' arrives quoted (no shell expands it): expand it as check_path did
+    case "$a" in "~/"*) args+=("$HOME/${a#\~/}") ;; *) args+=("$a") ;; esac
+  done
+  set -- ${args[@]+"${args[@]}"}
+  export AWS_PAGER="" NO_COLOR=1
+  [ "$(uname)" = Darwin ] && export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+  case "$tool" in
+    git) exec git --no-pager --no-optional-locks "$@" ;;
+    grep) exec grep --exclude='*.tfstate*' --exclude='.env*' --exclude='*.pem' --exclude='*.key' --exclude-dir=.terraform "$@" ;;
+    *) exec "$tool" "$@" ;;
+  esac
+}
+
+mode() {
+  case "${1-}" in
+    on) mkdir -p "$(dirname "$MODE")"; printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${2-}" > "$MODE"; echo "ro: read-only mode ON ($MODE)" ;;
+    off) rm -f "$MODE"; echo "ro: read-only mode OFF" ;;
+    status) if [ -f "$MODE" ]; then echo "ro: ON since $(cat "$MODE")"; else echo "ro: OFF"; fi ;;
+    *) usage ;;
+  esac
+}
+
+host="" check=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --host) host="${2-}"; [ -n "$host" ] || usage; shift 2 ;;
+    --check) check=1; shift ;;
+    mode) shift; mode "$@"; exit 0 ;;
+    -h|--help) usage ;;
+    *) break ;;
+  esac
+done
+[ $# -gt 0 ] || usage
+
+if [ -n "$host" ]; then
+  REMOTE=1 validate "$@"
+  flags=""; [ "$check" = 1 ] && flags="--check "
+  exec ssh -o BatchMode=yes "$host" \
+    "RO_PROFILES=$(printf %q "${RO_PROFILES-}") RO_CONTEXTS=$(printf %q "${RO_CONTEXTS-}") ${RO_REMOTE_BIN:-\$HOME/infra-agent-harness/bin/ro} $flags$(printf '%q ' "$@")"
+fi
+
+validate "$@"
+if [ "$check" = 1 ]; then echo ok; exit 0; fi
+run "$@"
