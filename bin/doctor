@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# Check (and fix what is safe) the setup of this machine for the harness. Idempotent.
+# Prints one summary to paste back. Never prints keys or tokens.
+# Usage: bin/doctor
+# Repository with your works: $IAH_REPO, else the git repository of the current directory (optional).
+# 'cond && ok … || warn …' is safe: ok/warn/fail only append to an array and never fail.
+# shellcheck disable=SC2015
+set -uo pipefail
+
+HARNESS="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/vocab.sh
+. "$HARNESS/bin/lib/vocab.sh"
+REPO="${IAH_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
+
+if [ "$(uname)" = "Darwin" ]; then MACHINE=macos; elif grep -qi microsoft /proc/version 2>/dev/null; then MACHINE=wsl; else MACHINE=linux; fi
+R=(); ok() { R+=("OK    $*"); }; warn() { R+=("WARN  $*"); }; fail() { R+=("FAIL  $*"); }
+
+# 1. Harness checkout
+if git -C "$HARNESS" rev-parse --git-dir >/dev/null 2>&1; then
+  git -C "$HARNESS" fetch -q 2>/dev/null || warn "harness: git fetch failed (network / credentials?)"
+  behind="$(git -C "$HARNESS" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo '?')"
+  [ "$behind" = 0 ] && ok "harness up to date ($HARNESS)" || warn "harness behind its upstream by $behind: git -C $HARNESS pull --rebase"
+else
+  ok "harness at $HARNESS (not a git checkout)"
+fi
+
+# 2. Repository with your works (optional)
+if [ -n "$REPO" ] && [ "$REPO" != "$HARNESS" ]; then
+  hp="$(git -C "$REPO" config core.hooksPath || true)"
+  if [ "$hp" = "$HARNESS/bin/hooks" ]; then ok "repo $REPO: hooksPath -> harness bin/hooks"
+  elif [ -z "$hp" ]; then git -C "$REPO" config core.hooksPath "$HARNESS/bin/hooks" && ok "repo $REPO: hooksPath set to $HARNESS/bin/hooks (was missing)"
+  else warn "repo $REPO: hooksPath is '$hp', not $HARNESS/bin/hooks (left as is)"; fi
+  vocab_load "$REPO" 2>/dev/null; ok "repo $REPO: record language '$VOC_LANG' (.harness.conf)"
+  n="$(find "$REPO/contexts" -mindepth 1 -maxdepth 1 -type d ! -name '_*' 2>/dev/null | wc -l | tr -d ' ')"
+  [ "$n" -gt 0 ] && ok "repo $REPO: $n context(s) in contexts/" || warn "repo $REPO: no contexts/<name>/ yet (works can only go under work/global/)"
+else
+  warn "no repository with works detected (run from it, or set IAH_REPO)"
+fi
+
+# 3. Tools
+for t in git jq gitleaks; do
+  if command -v "$t" >/dev/null; then ok "$t present"; else fail "$t missing"; fi
+done
+command -v gh >/dev/null && ok "gh present" || warn "gh missing (only needed for GitHub work)"
+
+# 4. Harness installed for the agents
+"$HARNESS/bin/link-harness" --quiet && ok "link-harness run"
+cs="$HOME/.claude/settings.json"
+for h in ro-guard.sh block-destructive-platform.sh; do
+  if jq -e --arg h "$h" '[.hooks.PreToolUse[]?.hooks[]?.command | select(endswith($h))] | length > 0' "$cs" >/dev/null 2>&1; then
+    ok "hook $h registered in ~/.claude/settings.json"
+  else fail "hook $h not registered in ~/.claude/settings.json (bin/link-harness)"; fi
+done
+missing="$(jq -r --slurpfile b "$HARNESS/hooks/settings.base.json" '(($b[0].permissions.deny + $b[0].permissions.ask) - ((.permissions.deny // []) + (.permissions.ask // []))) | length' "$cs" 2>/dev/null || echo '?')"
+[ "$missing" = 0 ] && ok "deny/ask rules of hooks/settings.base.json present" || warn "$missing deny/ask rule(s) of hooks/settings.base.json missing (bin/link-harness)"
+[ -x "$HARNESS/bin/hooks/commit-msg" ] && ok "commit-msg hook present" || fail "bin/hooks/commit-msg missing or not executable"
+tlog="$(mktemp)"
+for t in block-destructive commit-msg ro; do
+  IAH_HOOK_LOG="$tlog" bash "$HARNESS/tests/$t.sh" >/dev/null 2>&1 && ok "tests/$t.sh green" || fail "tests/$t.sh failing: run it to see which case"
+done
+rm -f "$tlog"
+
+# 5. GitHub credentials (names and prefixes only)
+if command -v gh >/dev/null; then
+  if gh auth status >/dev/null 2>&1; then
+    pfx="$(gh auth status 2>&1 | sed -n 's/.*Token: \(gh[a-z]_\).*/\1/p' | head -1)"
+    case "$pfx" in ghp_) warn "gh uses a CLASSIC token (ghp_): gh auth logout && gh auth login --web";; "") ok "gh logged in";; *) ok "gh logged in (token type $pfx)";; esac
+  else warn "gh not logged in (gh auth login --web)"; fi
+fi
+# Only where credentials are configured: shell/git/tool config files and small config dirs (no repos, no session logs).
+cfg=()
+for f in .zshrc .zprofile .zshenv .bash_profile .bashrc .profile .gitconfig .git-credentials .npmrc .netrc .claude.json \
+         .claude/settings.json .claude/settings.local.json .copilot/config.json .copilot/mcp-config.json .docker/config.json; do
+  [ -f "$HOME/$f" ] && cfg+=("$HOME/$f")
+done
+for d in .config/gh .config/git .config/mise .copilot/mcp .aws; do [ -d "$HOME/$d" ] && cfg+=("$HOME/$d"); done
+files=""; [ "${#cfg[@]}" -gt 0 ] && files="$(grep -rIlE 'ghp_[A-Za-z0-9]{36}' "${cfg[@]}" 2>/dev/null | tr '\n' ' ')"
+[ -z "$files" ] && ok "no classic token (ghp_) in config files" || warn "classic token (ghp_) found in: $files"
+vars="$(env | grep -oE '^(GITHUB|GH|COPILOT)_[A-Z_]*TOKEN' | tr '\n' ' ')"
+[ -z "$vars" ] && ok "no GitHub token in environment variables" || warn "token in environment variables: $vars"
+helper="$(git config --get-all credential.helper | tr '\n' ' ')"; ok "git credential.helper: ${helper:-none}"
+
+echo "=== bin/doctor · machine: $MACHINE · $(date '+%Y-%m-%d %H:%M')"
+printf '%s\n' "${R[@]}"
+n_fail="$(printf '%s\n' "${R[@]}" | grep -c '^FAIL')"; n_warn="$(printf '%s\n' "${R[@]}" | grep -c '^WARN')"
+echo "=== $n_fail fail(s), $n_warn warning(s)"
+[ "$n_fail" -eq 0 ]

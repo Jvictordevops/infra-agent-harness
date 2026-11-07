@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Block secrets (gitleaks) and validate staged works against STANDARD.md.
-# Enable with: git config core.hooksPath bin/hooks
+# Block secrets (gitleaks) and validate the staged works (bin/check-work --staged).
+# Enable in the repository that holds your works: git config core.hooksPath <harness>/bin/hooks
 set -euo pipefail
+HERE="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")" && pwd)"
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 if ! command -v gitleaks >/dev/null 2>&1; then
-  echo "pre-commit: gitleaks not installed (brew install gitleaks) — commit blocked" >&2
+  echo "pre-commit: gitleaks not installed (https://github.com/gitleaks/gitleaks) — commit blocked" >&2
   exit 1
 fi
 gitleaks git --staged --redact --no-banner --exit-code 1 "$ROOT" \
   || { echo "pre-commit: gitleaks found secrets in staged changes — commit blocked" >&2; exit 1; }
-exec "$ROOT/bin/check-work" --staged
+IAH_REPO="$ROOT" exec "$HERE/../check-work" --staged

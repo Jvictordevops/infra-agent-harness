@@ -32,6 +32,16 @@ VOC_CORRECTED_BY="Corrected by"
 VOC_SUPERSEDED_BY="Superseded by"
 VOC_IDS_RENUMBERED_IN="Ids renumbered in"
 
+# Training unit sections checked by check-work (prefix of the heading)
+VOC_TU_CASE="1. The case"
+VOC_TU_WALKTHROUGH="2. The walkthrough"
+VOC_TU_CONCEPTS="4. Concepts"
+VOC_TU_QUESTIONS="7. Questions"
+
 # README objectives table
 VOC_OBJECTIVE="Objective"
 VOC_DONE_WHEN="Done when"
+
+# hooks/confidence-nudge: extra trigger words (ERE alternatives, lower case; English ones always apply)
+VOC_NUDGE_WORDS=""
+VOC_NUDGE_MESSAGE="Every conclusion ends with Confidence: high|medium|low. If low, state the uncertainty and propose the cheapest check."

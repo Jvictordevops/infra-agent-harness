@@ -30,6 +30,16 @@ VOC_CORRECTED_BY="Corregido por"
 VOC_SUPERSEDED_BY="Sustituido por"
 VOC_IDS_RENUMBERED_IN="Ids renumerados en"
 
+# Training unit sections checked by check-work (prefix of the heading)
+VOC_TU_CASE="1. El caso"
+VOC_TU_WALKTHROUGH="2. El recorrido"
+VOC_TU_CONCEPTS="4. Conceptos"
+VOC_TU_QUESTIONS="7. Preguntas"
+
 # README objectives table
 VOC_OBJECTIVE="Objetivo"
 VOC_DONE_WHEN="Hecho cuando"
+
+# hooks/confidence-nudge: extra trigger words (ERE alternatives, lower case; English ones always apply)
+VOC_NUDGE_WORDS="no funciona|no arranca|no responde|investig|lento|cuelga|falla|caído|caida"
+VOC_NUDGE_MESSAGE="Toda conclusión termina con Confianza: alta|media|baja. Si es baja, declara la incertidumbre y propón la verificación más barata."

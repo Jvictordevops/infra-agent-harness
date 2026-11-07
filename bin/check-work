@@ -1,0 +1,556 @@
+#!/usr/bin/env bash
+# Validate work folders (work/<context>/<YYYY-MM-DD.slug>/) against the standard.
+# Usage: bin/check-work [--staged | --changed] [work-dir...]
+#   no args   -> all work/*/*/
+#   --staged  -> only works with staged changes (used by the pre-commit hook)
+#   --changed -> like --staged, but compares the working tree with HEAD (staged, unstaged and
+#                untracked files under work/): run it BEFORE committing (close-task does)
+#   work-dir  -> with --staged/--changed, restrict the check to those works
+# Repository: $IAH_REPO, else the git repository of the current directory.
+# Valid parents of a work: global, and every folder <name> with contexts/<name>/ in that repository.
+# Record words (task line, sections, confidence, banners) follow the repository language
+# (.harness.conf, see bin/lib/vocab.sh).
+# Numbering is checked in works with status active|paused and without 'numbering: legacy';
+# legacy ones only get a WARN, closed|dropped are skipped.
+# Same works: WARN for '[~]' (in progress) items missing from README '## In progress', or on
+# struck / Blocked items.
+# Exit 1 if any ERROR. WARN does not fail.
+# ls | grep is safe here: it only ever lists ROADMAP/YYYY-MM-DD.md names.
+# shellcheck disable=SC2010
+set -uo pipefail
+
+HERE="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")" && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/vocab.sh
+. "$HERE/lib/vocab.sh"
+ROOT="${IAH_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+ROOT="$(cd "$ROOT" && pwd)"
+vocab_load "$ROOT"
+TASK_RE="^\*\*$(vocab_re "$VOC_TASK"):\*\*"
+OPEN_RE="^## $(vocab_re "$VOC_OPEN")"
+CONF_RE="^\**$(vocab_re "$VOC_CONFIDENCE"):"
+BANNER_RE="$(vocab_banner_re)"
+BANNERS="'$VOC_CORRECTED_BY' / '$VOC_SUPERSEDED_BY' / '$VOC_IDS_RENUMBERED_IN'"
+
+ERRORS=0; WARNS=0
+DATE_RE='[0-9]{4}-[0-9]{2}-[0-9]{2}'
+SLUG_RE='[a-z0-9]+(-[a-z0-9]+)*'
+MODE=""        # "" | staged | changed
+SCOPE="work/"  # git pathspec(s) the record checks are limited to
+
+err()  { echo "ERROR $1: $2"; ERRORS=$((ERRORS+1)); }
+warn() { echo "WARN  $1: $2"; WARNS=$((WARNS+1)); }
+rel()  { echo "${1#"$ROOT"/}"; }
+
+in_git() { git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; }
+has_head() { git -C "$ROOT" rev-parse --verify -q HEAD >/dev/null 2>&1; }
+
+# Parents a work may live in: global + contexts/<name>/ (templates start with '_')
+contexts_list() {
+  local d n out="global"
+  for d in "$ROOT"/contexts/*/; do
+    [ -d "$d" ] || continue
+    n="$(basename "$d")"
+    case "$n" in _*) continue ;; esac
+    out="$out|$n"
+  done
+  printf '%s' "$out"
+}
+valid_context() { case "|$(contexts_list)|" in *"|$1|"*) return 0 ;; esac; return 1; }
+
+forbidden_name() {
+  # $1 = basename
+  echo "$1" | grep -Eiq -- '-(v[0-9]+|final|definitivo)(\.|$)|^backup-' || echo "$1" | grep -Eq '^(ESTADO|RESUMEN)-'
+}
+
+fm_get() { # $1 file, $2 key -> value (frontmatter only)
+  awk -v k="$2" 'NR==1 && $0!="---" {exit} NR>1 && $0=="---" {exit}
+    NR>1 { if (index($0, k":")==1) { v=substr($0, length(k)+2); sub(/^[ \t]+/, "", v); sub(/[ \t]+#.*$/, "", v); print v; exit } }' "$1"
+}
+
+# Current revision (greatest date) of ROADMAP/ must have an id on every open,
+# top-level item in Carried/New/Blocked: "- **<id>** ..." or struck "- ~~..."
+# or the placeholder "- —". Indented sub-bullets are not validated.
+# (The shape of the id itself is checked by check_numbering in numbered works.)
+check_roadmap_ids() {
+  local dir="$1" r="$2" latest roadmap rel_roadmap section in_section line
+  latest="$(cd "$dir/ROADMAP" 2>/dev/null && ls -1 | grep -E "^$DATE_RE\.md$" | sort | tail -1)"
+  [ -n "$latest" ] || return 0
+  roadmap="$dir/ROADMAP/$latest"; rel_roadmap="$r/ROADMAP/$latest"
+  for section in Carried New Blocked; do
+    in_section=0
+    while IFS= read -r line; do
+      case "$line" in
+        "## "*)
+          [ "$line" = "## $section" ] && in_section=1 || in_section=0
+          continue ;;
+      esac
+      [ "$in_section" = 1 ] || continue
+      case "$line" in
+        "- "*)
+          case "$line" in
+            "- **"*|"- ~~"*|"- —") ;;
+            *) err "$rel_roadmap" "item in '$section' without id: '${line:0:60}' (must start with '- **<id>**', '- ~~', or be '- —')" ;;
+          esac ;;
+      esac
+    done < "$roadmap"
+  done
+}
+
+# ---------------------------------------------------------------------------
+# Numbering. awk programs (bash 3.2 has no associative arrays).
+# Each prints "KIND|message" lines that check_numbering turns into err calls.
+# ---------------------------------------------------------------------------
+
+# README: declared objectives/sub-objectives and Next steps ids.
+# Output: ERR|msg · OBJ|ids · SUB|ids · NEXT|ids
+read -r -d '' README_AWK <<'AWK_EOF'
+function isobj(s) { return s ~ /^[0-9]+$/ }
+function issub(s) { return s ~ /^[0-9]+\.[0-9]+$/ }
+/^## / {
+  h = $0; sub(/[ \t\r]+$/, "", h)
+  insec = (h == "## Objectives"); if (insec) found = 1
+  innext = (h == "## Next steps")
+  next
+}
+insec && /^\|[ \t]*\*\*/ {
+  s = $0; sub(/^\|[ \t]*\*\*/, "", s)
+  p = index(s, "**"); if (p == 0) next
+  id = substr(s, 1, p - 1); rest = substr(s, p + 2)
+  if (rest !~ /^[ \t]*\|/) next
+  if (!isobj(id) && !issub(id)) { print "ERR|Objectives: id '" id "' invalid (must be N or N.M; no '#' or letters)"; next }
+  if (id in seen) { print "ERR|Objectives: duplicate id '" id "'"; next }
+  seen[id] = 1
+  if (isobj(id)) { nobj++; objs = objs " " id } else { subs = subs " " id; sorder[++ns] = id }
+  next
+}
+innext && /^- \*\*/ {
+  s = substr($0, 5); p = index(s, "**")
+  if (p > 0) nxt = nxt " " substr(s, 1, p - 1)
+  next
+}
+END {
+  if (!found) print "ERR|missing '## Objectives' section"
+  else if (nobj == 0) print "ERR|'## Objectives' declares no objective (rows '| **N** | ...')"
+  for (i = 1; i <= ns; i++) {
+    split(sorder[i], q, ".")
+    if (!(q[1] in seen)) print "ERR|Objectives: sub-objective '" sorder[i] "' without its objective '" q[1] "' declared"
+  }
+  print "OBJ|" objs; print "SUB|" subs; print "NEXT|" nxt
+}
+AWK_EOF
+
+# Previous ROADMAP revision: ids that are closed there (struck "- ~~**id**" in any
+# section, or listed under "## Dropped"). Output: <id>@<rev>, new-format ids only.
+read -r -d '' CLOSED_AWK <<'AWK_EOF'
+/^## / { h = $0; sub(/[ \t\r]+$/, "", h); dropped = (h == "## Dropped"); next }
+/^- / {
+  rest = substr($0, 3); struck = 0
+  if (substr(rest, 1, 2) == "~~") { struck = 1; rest = substr(rest, 3) }
+  if (match(rest, /^\*\*[^*]+\*\*/)) {
+    id = substr(rest, 3, RLENGTH - 4)
+    if (id ~ /^[0-9]+\.[0-9]+(\.[0-9]+)?$/ && (struck || dropped)) print id "@" rev
+  }
+}
+AWK_EOF
+
+# Current ROADMAP revision: sections, id format, depth, duplicates, reuse of closed
+# ids, and README Next steps ids. Output: R|msg (about the revision) · M|msg (README)
+# Items without a bold id are left to check_roadmap_ids (no double reporting).
+read -r -d '' ROADMAP_AWK <<'AWK_EOF'
+function istask(s) { return s ~ /^[0-9]+\.[0-9]+(\.[0-9]+)?$/ }
+function count(id) { if (!(id in seen)) order[++no] = id; seen[id]++ }
+BEGIN {
+  n = split(objs, a, " "); for (i = 1; i <= n; i++) O[a[i]] = 1
+  n = split(subs, a, " "); for (i = 1; i <= n; i++) { S[a[i]] = 1; split(a[i], q, "."); HASSUB[q[1]] = 1 }
+  n = split(hist, a, " "); for (i = 1; i <= n; i++) { k = index(a[i], "@"); CLOSED[substr(a[i], 1, k - 1)] = substr(a[i], k + 1) }
+}
+/^## / {
+  h = $0; sub(/[ \t\r]+$/, "", h); name = substr(h, 4)
+  if (index(name, "What landed since") == 1) sec = "landed"
+  else if (name == "Carried" || name == "New" || name == "Blocked" || name == "Dropped" || name == "Risks") sec = name
+  else {
+    print "R|unknown section '## " name "' (allowed: What landed since ..., Carried, New, Blocked, Dropped, Risks)"
+    # still validate the items of a variant such as "Carried (new in ...)" as their base section
+    split(name, w, " "); sec = (w[1] == "Carried" || w[1] == "New" || w[1] == "Blocked") ? w[1] : "?"
+  }
+  next
+}
+/^- / && (sec == "Carried" || sec == "New" || sec == "Blocked") {
+  if ($0 == "- —") next
+  rest = substr($0, 3); struck = 0
+  if (substr(rest, 1, 2) == "~~") { struck = 1; rest = substr(rest, 3) }
+  if (substr(rest, 1, 2) != "**") next
+  if (match(rest, /^\*\*[^*]+\*\*/)) id = substr(rest, 3, RLENGTH - 4); else id = ""
+  if (struck) { if (istask(id)) count(id); next }
+  txt = substr($0, 1, 60)
+  if (id == "") { print "R|line " NR ": item without a valid '**<id>**': '" txt "'"; next }
+  if (!istask(id)) { print "R|line " NR ": id '" id "' invalid (must be N.M or N.M.K; no '#', letters or bare N): '" txt "'"; next }
+  np = split(id, p, "."); N = p[1]; M = p[1] "." p[2]
+  if (!noobj && !(N in O)) print "R|line " NR ": task '" id "': objective '" N "' not declared in README '## Objectives'"
+  else if (N in HASSUB) {
+    if (np == 2) print "R|line " NR ": task '" id "': objective '" N "' has sub-objectives, so tasks must be N.M.K (" id " is " ((id in S) ? "a sub-objective" : "a 2-level id") ")"
+    else if (!(M in S)) print "R|line " NR ": task '" id "': sub-objective '" M "' not declared in README '## Objectives'"
+  } else if (np == 3 && !noobj) print "R|line " NR ": task '" id "': objective '" N "' has no sub-objectives, so tasks must be N.M"
+  count(id); OPEN[id] = 1
+  if (id in CLOSED) print "R|line " NR ": id '" id "' reused: it was struck/dropped in ROADMAP/" CLOSED[id] ".md (ids are never reused)"
+}
+END {
+  for (i = 1; i <= no; i++) if (seen[order[i]] > 1) print "R|duplicate task id '" order[i] "' (" seen[order[i]] " times in the current revision)"
+  n = split(nextids, a, " ")
+  for (i = 1; i <= n; i++) {
+    id = a[i]
+    if (!istask(id)) print "M|Next steps: '" id "' is not a valid task id (N.M or N.M.K, no '#')"
+    else if (!(id in OPEN)) print "M|Next steps: '" id "' is not an open item of " revlabel
+  }
+}
+AWK_EOF
+
+# In-progress marker "[~]" in the current ROADMAP revision. Warnings only.
+# Open items marked "- **<id>** [~] ..." must be listed in README '## In progress' (var ip);
+# a struck item or an item under '## Blocked' must not carry "[~]". Output: W|msg
+read -r -d '' INPROGRESS_AWK <<'AWK_EOF'
+BEGIN {
+  ip = " " ip " "; gsub(/[^0-9.]/, " ", ip)
+  while (gsub(/\.+ /, " ", ip)) ;
+}
+/^## / { h = $0; sub(/[ \t\r]+$/, "", h); sec = substr(h, 4); next }
+/^- ~~/ { if ($0 ~ /^- ~~\*\*[^*]+\*\* *\[~\]/) print "W|struck item still marked [~]: '" substr($0, 1, 60) "'"; next }
+/^- / && (sec == "Carried" || sec == "New" || sec == "Blocked") {
+  rest = substr($0, 3)
+  if (!match(rest, /^\*\*[^*]+\*\*/)) next
+  id = substr(rest, 3, RLENGTH - 4); after = substr(rest, RLENGTH + 1); sub(/^[ \t]+/, "", after)
+  inprog = (substr(after, 1, 3) == "[~]")
+  if (sec == "Blocked") { if (inprog) print "W|task " id " is in '## Blocked' but marked [~]"; next }
+  if (inprog && index(ip, " " id " ") == 0) print "W|task " id " marked [~] but not in README In progress"
+}
+AWK_EOF
+
+# Numbering checks for one work.
+check_numbering() {
+  local dir="$1" r="$2"
+  local readme="$dir/README.md" st nb out kind msg objs="" subs="" nxt="" noobj=0
+  local latest f hist="" rf revlabel
+  [ -f "$readme" ] || return 0
+  st="$(fm_get "$readme" status)"
+  case "$st" in active|paused) ;; *) return 0 ;; esac   # closed|dropped = history; invalid status is reported elsewhere
+  nb="$(fm_get "$readme" numbering)"
+  if [ "$nb" = "legacy" ]; then warn "$r" "numbering: legacy (not migrated to the numbering rules)"; return 0; fi
+
+  while IFS= read -r out; do
+    kind="${out%%|*}"; msg="${out#*|}"
+    case "$kind" in
+      ERR) err "$r/README.md" "$msg" ;;
+      OBJ) objs="$msg" ;;
+      SUB) subs="$msg" ;;
+      NEXT) nxt="$msg" ;;
+    esac
+  done < <(awk "$README_AWK" "$readme")
+  [ -n "$(echo "$objs" | tr -d ' ')" ] || noobj=1   # root cause already reported: do not cascade "objective not declared"
+
+  latest="$(cd "$dir/ROADMAP" 2>/dev/null && ls -1 | grep -E "^$DATE_RE\.md$" | sort | tail -1)"
+  rf=/dev/null; revlabel="ROADMAP (no revision found)"
+  if [ -n "$latest" ]; then
+    rf="$dir/ROADMAP/$latest"; revlabel="ROADMAP/$latest"
+    for f in $(ls -1 "$dir/ROADMAP" 2>/dev/null | grep -E "^$DATE_RE\.md$" | sort); do
+      [ "$f" = "$latest" ] && continue
+      hist="$hist $(awk -v rev="${f%.md}" "$CLOSED_AWK" "$dir/ROADMAP/$f" | tr '\n' ' ')"
+    done
+  fi
+  while IFS= read -r out; do
+    kind="${out%%|*}"; msg="${out#*|}"
+    case "$kind" in
+      R) err "$r/ROADMAP/$latest" "$msg" ;;
+      M) err "$r/README.md" "$msg" ;;
+    esac
+  done < <(awk -v objs="$objs" -v subs="$subs" -v hist="$hist" -v nextids="$nxt" -v noobj="$noobj" -v revlabel="$revlabel" "$ROADMAP_AWK" "$rf")
+
+  [ -n "$latest" ] || return 0
+  local ipsec
+  # shellcheck disable=SC1003  # tr maps newline and backslash to spaces
+  ipsec="$(awk '/^## /{s=($0 ~ /^## In progress[ \t\r]*$/); next} s' "$readme" | tr '\n\\' '  ')"
+  while IFS= read -r out; do
+    warn "$r/ROADMAP/$latest" "${out#*|}"
+  done < <(awk -v ip="$ipsec" "$INPROGRESS_AWK" "$rf")
+}
+
+# True when the work is subject to numbering rules: active|paused and not 'numbering: legacy'.
+numbered_work() { # $1 = absolute work dir
+  local readme="$1/README.md" st
+  [ -f "$readme" ] || return 1
+  st="$(fm_get "$readme" status)"
+  case "$st" in active|paused) ;; *) return 1 ;; esac
+  [ "$(fm_get "$readme" numbering)" != "legacy" ]
+}
+
+# Structure hints for an optional training unit (templates/training-unit.md). Warnings only.
+check_training_unit() { # $1 = file, $2 = relative path
+  local t="$1" rt="$2" sec
+  grep -Eq "$TASK_RE" "$t" || warn "$rt" "training unit without '**$VOC_TASK:** <id> <short name>' line"
+  for sec in "$VOC_TU_CASE" "$VOC_TU_WALKTHROUGH" "$VOC_TU_CONCEPTS" "$VOC_TU_QUESTIONS" "$VOC_OPEN"; do
+    grep -Eq "^## $(vocab_re "$sec")" "$t" || warn "$rt" "training unit without section '## $sec' (templates/training-unit.md)"
+  done
+  grep -Eq "$CONF_RE" "$t" || warn "$rt" "training unit without '$VOC_CONFIDENCE:' line"
+}
+
+check_work() {
+  local dir="${1%/}" r name ctx readme f base n key v t tb
+  [ -d "$dir" ] || { err "$dir" "not a directory"; return; }
+  dir="$(cd "$dir" && pwd)"; r="$(rel "$dir")"
+  name="$(basename "$dir")"; ctx="$(basename "$(dirname "$dir")")"
+
+  echo "$name" | grep -Eq "^$DATE_RE\.$SLUG_RE$" || err "$r" "folder must be YYYY-MM-DD.<kebab-slug>"
+  valid_context "$ctx" || err "$r" "parent must be global or have contexts/$ctx/ (now: $(contexts_list))"
+
+  # Root content
+  for f in "$dir"/* "$dir"/.[!.]*; do
+    [ -e "$f" ] || continue
+    base="$(basename "$f")"
+    if [ -d "$f" ]; then
+      case "$base" in
+        RECORD|ROADMAP|evidence|scripts|.tmp|.claude) ;;
+        training)
+          # Optional training units: one training/<slug>.md per unit, no subfolders; README.md = optional index
+          for t in "$f"/* "$f"/.[!.]*; do
+            [ -e "$t" ] || continue
+            tb="$(basename "$t")"
+            [ "$tb" = ".DS_Store" ] && continue
+            [ -f "$t" ] || { err "$r/training/$tb" "no subfolders in training/"; continue; }
+            [ "$tb" = "README.md" ] && continue   # optional index of the training: not a unit
+            echo "$tb" | grep -Eq "^$SLUG_RE\.md$" || { err "$r/training/$tb" "training unit must be <kebab-slug>.md (no ids or dates in the name)"; continue; }
+            check_training_unit "$t" "$r/training/$tb"
+          done ;;
+        prompts) warn "$r/prompts" "legacy folder (kept); new prompts go in the chat, not in files" ;;
+        *) err "$r/$base" "folder not allowed in work root";; esac
+    else
+      case "$base" in README.md|LESSONS.md|.DS_Store) ;; *) err "$r/$base" "file not allowed in work root (only README.md, LESSONS.md; the plan is the ROADMAP)";; esac
+    fi
+  done
+
+  # README + frontmatter
+  readme="$dir/README.md"
+  if [ ! -f "$readme" ]; then
+    err "$r" "missing README.md"
+  else
+    [ "$(head -1 "$readme")" = "---" ] || err "$r/README.md" "missing YAML frontmatter"
+    for key in id type type_history company status tickets repos updated; do
+      [ -n "$(fm_get "$readme" "$key")" ] || err "$r/README.md" "frontmatter: missing '$key'"
+    done
+    v="$(fm_get "$readme" id)";      [ -z "$v" ] || [ "$v" = "$name" ] || err "$r/README.md" "id '$v' != folder name"
+    v="$(fm_get "$readme" type)"
+    case "$v" in prj|inc|inv|poc|"") ;; *) err "$r/README.md" "type '$v' not in prj|inc|inv|poc";; esac
+    local th; th="$(fm_get "$readme" type_history)"
+    if [ -n "$th" ]; then
+      echo "$th" | grep -Eq "^\[((prj|inc|inv|poc)@$DATE_RE)(, *(prj|inc|inv|poc)@$DATE_RE)*\]$" \
+        || err "$r/README.md" "type_history must be [type@YYYY-MM-DD, ...]"
+      [ -z "$v" ] || echo "$th" | grep -Eq "$v@$DATE_RE\]$" || warn "$r/README.md" "last type_history entry != type '$v'"
+    fi
+    v="$(fm_get "$readme" company)"; [ -z "$v" ] || [ "$v" = "$ctx" ] || err "$r/README.md" "company '$v' != parent dir '$ctx'"
+    v="$(fm_get "$readme" status)"
+    case "$v" in active|paused|closed|dropped|"") ;; *) err "$r/README.md" "status '$v' not in active|paused|closed|dropped";; esac
+    for key in tickets repos; do
+      v="$(fm_get "$readme" "$key")"; [ -z "$v" ] || echo "$v" | grep -Eq '^\[.*\]$' || err "$r/README.md" "$key must be a [list]"
+    done
+    v="$(fm_get "$readme" updated)"; [ -z "$v" ] || echo "$v" | grep -Eq "^$DATE_RE$" || err "$r/README.md" "updated must be YYYY-MM-DD"
+    n="$(wc -l < "$readme" | tr -d ' ')"; [ "$n" -le 150 ] || err "$r/README.md" "$n lines > 150"
+  fi
+
+  # RECORD
+  if [ -d "$dir/RECORD" ]; then
+    for f in "$dir"/RECORD/* "$dir"/RECORD/.[!.]*; do
+      [ -e "$f" ] || continue; base="$(basename "$f")"
+      case "$base" in .gitkeep|.DS_Store) continue;; esac
+      [ -f "$f" ] || { err "$r/RECORD/$base" "no subfolders in RECORD/"; continue; }
+      echo "$base" | grep -Eq "^$DATE_RE\.$SLUG_RE\.(done|WIP)\.md$" || err "$r/RECORD/$base" "record must be YYYY-MM-DD.<slug>.(done|WIP).md"
+    done
+  fi
+  # ROADMAP
+  if [ -d "$dir/ROADMAP" ]; then
+    for f in "$dir"/ROADMAP/* "$dir"/ROADMAP/.[!.]*; do
+      [ -e "$f" ] || continue; base="$(basename "$f")"
+      case "$base" in .gitkeep|.DS_Store) continue;; esac
+      echo "$base" | grep -Eq "^$DATE_RE\.md$" || err "$r/ROADMAP/$base" "roadmap revision must be YYYY-MM-DD.md"
+    done
+    check_roadmap_ids "$dir" "$r"
+  fi
+  # Numbering (objectives, task ids, depth, duplicates, reuse, sections, Next steps)
+  check_numbering "$dir" "$r"
+
+  # Forbidden names (except evidence/: raw tool output, and .tmp/: scratch)
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    forbidden_name "$(basename "$f")" && err "$(rel "$f")" "forbidden name (-vN, -final, -definitivo, ESTADO-*, RESUMEN-*, backup-*)"
+  done <<EOF2
+$(find "$dir" -mindepth 1 \( -path "$dir/.tmp" -o -path "$dir/evidence" \) -prune -o -print 2>/dev/null)
+EOF2
+}
+
+# ---------------------------------------------------------------------------
+# Append-only check on changed records (git): --staged = index vs HEAD,
+# --changed = working tree vs HEAD (incl. untracked files).
+# Only allowed edit besides appending: banner lines under the title, in the repository
+# language (e.g. '> **Corrected by:** [..](<record>.done.md)'), each pointing to an existing record.
+# ---------------------------------------------------------------------------
+strip_banners() { grep -Ev "$BANNER_RE" | cat -s; }
+
+new_content() { # $1 = path relative to ROOT -> content to be committed
+  if [ "$MODE" = changed ]; then cat "$ROOT/$1" 2>/dev/null; else git -C "$ROOT" show ":$1" 2>/dev/null; fi
+}
+old_content() { git -C "$ROOT" show "HEAD:$1" 2>/dev/null; }
+
+check_banner_targets() {
+  local rec="$1" link target dir
+  dir="$(dirname "$ROOT/$rec")"
+  while IFS= read -r link; do
+    [ -n "$link" ] || continue
+    target="$dir/$link"
+    [ -f "$target" ] || err "$rec" "banner ($BANNERS) links to missing record: $link"
+  done <<EOF4
+$(new_content "$rec" | grep -E "$BANNER_RE" | grep -oE '\]\([^)]+\.done\.md\)' | sed -E 's/^\]\((\.\/)?//; s/\)$//')
+EOF4
+}
+
+# Changes under $SCOPE as "<status>\t<path>[\t<new path>]" lines.
+list_changes() {
+  if [ "$MODE" = changed ]; then
+    # shellcheck disable=SC2086  # SCOPE is a list of pathspecs
+    { git -C "$ROOT" -c core.quotepath=false diff HEAD --name-status -M -- $SCOPE 2>/dev/null
+      git -C "$ROOT" -c core.quotepath=false ls-files --others --exclude-standard -- $SCOPE 2>/dev/null | awk '{print "A\t" $0}'
+    } | awk -F'\t' -v OFS='\t' '
+      # An unstaged "mv x.WIP.md x.done.md" shows up as D + untracked A: pair them as a rename.
+      { st[NR]=$1; a[NR]=$2; b[NR]=$3; n=NR; if ($1=="A") add[$2]=NR }
+      END {
+        for (i=1;i<=n;i++) if (st[i]=="D" && a[i] ~ /\/RECORD\/[^\/]*\.WIP\.md$/) {
+          t=a[i]; sub(/\.WIP\.md$/, ".done.md", t)
+          if (t in add) { drop[i]=1; drop[add[t]]=1; ren[i]=t }
+        }
+        for (i=1;i<=n;i++) {
+          if ((i in drop) && st[i]=="A") continue
+          if (i in ren) print "R", a[i], ren[i]; else print st[i], a[i], b[i]
+        }
+      }'
+  else
+    # shellcheck disable=SC2086
+    git -C "$ROOT" -c core.quotepath=false diff --cached --name-status -M HEAD -- $SCOPE 2>/dev/null
+  fi
+}
+
+readme_changed() { # $1 = work path relative to ROOT
+  if [ "$MODE" = changed ]; then
+    ! git -C "$ROOT" diff HEAD --quiet -- "$1/README.md" 2>/dev/null \
+      || [ -n "$(git -C "$ROOT" ls-files --others --exclude-standard -- "$1/README.md" 2>/dev/null)" ]
+  else
+    ! git -C "$ROOT" diff --cached --quiet -- "$1/README.md" 2>/dev/null
+  fi
+}
+
+# New record (status A) in an active/paused, non-legacy work: structure hints.
+check_new_record() { # $1 = record path relative to ROOT
+  local rec="$1" w base content
+  w="${rec%/RECORD/*}"; base="$(basename "$rec")"
+  numbered_work "$ROOT/$w" || return 0
+  echo "$base" | grep -Eq "^$DATE_RE\.$SLUG_RE\.(done|WIP)\.md$" || return 0
+  content="$(new_content "$rec")"
+  grep -Eq "$TASK_RE" <<<"$content" \
+    || warn "$rec" "new record without '**$VOC_TASK:** <id> <short name>' line — ignore if it does not belong to a task"
+  case "$base" in
+    *decision-*)
+      grep -Eq "$OPEN_RE" <<<"$content" || warn "$rec" "new decision record without '## $VOC_OPEN' section"
+      grep -Eq "$CONF_RE" <<<"$content" || warn "$rec" "new decision record without '$VOC_CONFIDENCE:' line" ;;
+  esac
+}
+
+check_changed_records() {
+  in_git && has_head || return 0
+  local status a b oldsz new_records=0 line works_new=""
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    status="$(echo "$line" | cut -f1)"; a="$(echo "$line" | cut -f2)"; b="$(echo "$line" | cut -f3)"
+    case "$status" in A|C*|R*) case "${b:-$a}" in work/*/*/prompts/*) err "${b:-$a}" "new file under prompts/ (paste prompts in the chat; prompts/ is legacy)"; continue;; esac;; esac
+    case "$a" in work/*/*/RECORD/*) ;; *) case "$b" in work/*/*/RECORD/*) ;; *) continue;; esac;; esac
+    case "$status" in
+      A)
+        new_records=$((new_records+1)); works_new="$works_new ${a%/RECORD/*}"
+        check_new_record "$a" ;;
+      D)
+        err "$a" "committed record deleted (RECORD/ is append-only)" ;;
+      M|R*)
+        [ -n "$b" ] || b="$a"
+        if [ "${status#R}" != "$status" ]; then
+          case "$a" in *.WIP.md) [ "$b" = "${a%.WIP.md}.done.md" ] || err "$a -> $b" "only rename allowed is <name>.WIP.md -> <name>.done.md";;
+            *) err "$a -> $b" "only rename allowed is <name>.WIP.md -> <name>.done.md";; esac
+          [ "$status" = "R100" ] && continue
+          cmp -s <(new_content "$b") <(old_content "$a") && continue
+        fi
+        oldsz="$(git -C "$ROOT" cat-file -s "HEAD:$a" 2>/dev/null || echo 0)"
+        # (no pipefail here: head closing the pipe early would SIGPIPE the producer on big records)
+        if ( set +o pipefail; new_content "$b" | head -c "$oldsz" | cmp -s - <(old_content "$a") ); then
+          warn "$b" "committed record extended (append at end only) — make sure nothing above changed in meaning"
+        elif cmp -s <(new_content "$b" | strip_banners) <(old_content "$a" | strip_banners); then
+          check_banner_targets "$b"
+        else
+          err "$b" "committed record modified (RECORD/ is append-only; write a new record instead, and optionally add a banner under the title: '> **$VOC_CORRECTED_BY:** [x](<record>.done.md)' or '> **$VOC_IDS_RENUMBERED_IN:** [x](<record>.done.md)')"
+        fi ;;
+    esac
+  done <<EOF3
+$(list_changes | awk 'NF')
+EOF3
+  if [ "$new_records" -gt 0 ]; then
+    local w
+    for w in $(echo "$works_new" | tr ' ' '\n' | sort -u); do
+      readme_changed "$w" \
+        || warn "$w" "new record(s) $([ "$MODE" = changed ] && echo "added" || echo "staged") but README.md not updated (Status/In progress/Map)"
+    done
+  fi
+}
+
+DIRS=""; EXPLICIT=""
+for arg in "$@"; do
+  case "$arg" in
+    --staged|--changed)
+      if [ -n "$MODE" ] && [ "$MODE" != "${arg#--}" ]; then echo "check-work: --staged and --changed are mutually exclusive" >&2; exit 2; fi
+      MODE="${arg#--}" ;;
+    -h|--help) awk 'NR>1 && /^#/ {sub(/^# ?/, ""); print; next} NR>1 {exit}' "$0"; exit 0 ;;
+    *) DIRS="$DIRS
+$arg"
+       EXPLICIT=1 ;;
+  esac
+done
+
+if [ -n "$MODE" ]; then
+  in_git || { echo "check-work: --$MODE requires git"; exit 2; }
+  if [ -n "$EXPLICIT" ]; then
+    # Restrict to the given works (also the git pathspec of the record checks)
+    SCOPE=""
+    while IFS= read -r d; do
+      [ -n "$d" ] || continue
+      [ -d "$d" ] && SCOPE="$SCOPE $(rel "$(cd "$d" && pwd)")"
+    done <<EOF5
+$DIRS
+EOF5
+    [ -n "$SCOPE" ] || SCOPE="work/"
+  elif [ "$MODE" = staged ]; then
+    DIRS="$(git -C "$ROOT" diff --cached --name-only -- work/ | awk -F/ 'NF>=4 {print "'"$ROOT"'/"$1"/"$2"/"$3}' | sort -u)"
+  else
+    # staged + unstaged + untracked files under work/ (never ignored ones)
+    DIRS="$(git -C "$ROOT" -c core.quotepath=false status --porcelain -uall -- work/ \
+      | sed -e 's/^...//' -e 's/^.* -> //' | awk -F/ 'NF>=4 {print "'"$ROOT"'/"$1"/"$2"/"$3}' | sort -u)"
+  fi
+  if [ -z "$EXPLICIT" ]; then
+    # Skip works deleted entirely
+    DIRS="$(echo "$DIRS" | while IFS= read -r d; do [ -n "$d" ] && [ -d "$d" ] && echo "$d"; done)"
+  fi
+elif [ -z "$(echo "$DIRS" | tr -d '\n')" ]; then
+  DIRS="$(for d in "$ROOT"/work/*/*/; do [ -d "$d" ] && echo "${d%/}"; done)"
+fi
+
+COUNT=0
+while IFS= read -r d; do
+  [ -n "$d" ] || continue
+  check_work "$d"; COUNT=$((COUNT+1))
+done <<EOF4
+$DIRS
+EOF4
+check_changed_records   # no mode = index vs HEAD, like --staged
+
+echo "check-work: $COUNT work(s), $ERRORS error(s), $WARNS warning(s)"
+[ "$ERRORS" -eq 0 ]

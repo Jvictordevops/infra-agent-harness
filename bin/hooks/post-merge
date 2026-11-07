@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
 # After a pull (merge): refresh the installed harness. Never blocks.
-"$(git rev-parse --show-toplevel)/bin/link-harness" --quiet || true
+HERE="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")" && pwd)"
+"$HERE/../link-harness" --quiet || true
