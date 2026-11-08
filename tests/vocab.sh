@@ -48,7 +48,7 @@ undef="$(comm -23 <(printf '%s\n' "$used") <(keys "$ROOT/locale/en.sh"))"
 check "templates only use keys defined in en.sh: $undef" '[ -z "$undef" ]'
 
 # --- rendering ------------------------------------------------------------------
-for t in record decision README roadmap; do
+for t in record decision README roadmap training-unit; do
   out="$("$ROOT/bin/render-template" --repo "$TMP/en" "$t" TITLE="A & B | C/D" DATE=2030-01-02)"
   check "$t (en): no {{VOC_ left" '! grep -q "{{VOC_" <<<"$out"'
   check "$t (en): literal values kept" '! grep -q "{{TITLE}}" <<<"$out" || [ "$t" = README ] || [ "$t" = roadmap ]'
@@ -58,6 +58,16 @@ rec_es="$("$ROOT/bin/render-template" --repo "$TMP/es" record TITLE=x)"
 check "record (en): title with & | / kept literally" 'grep -qxF "# A & B | C/D" <<<"$rec_en"'
 check "record (en): English fields" 'grep -q "^\*\*Task:\*\*" <<<"$rec_en" && grep -qx "## Open" <<<"$rec_en" && grep -q "^Confidence: high|medium|low" <<<"$rec_en"'
 check "record (es): Spanish fields" 'grep -q "^\*\*Tarea:\*\*" <<<"$rec_es" && grep -qx "## Abierto" <<<"$rec_es" && grep -q "^Confianza: alta|media|baja" <<<"$rec_es"'
+tu_es="$("$ROOT/bin/render-template" --repo "$TMP/es" training-unit)"
+tu_en="$("$ROOT/bin/render-template" --repo "$TMP/en" training-unit)"
+check "training-unit (es): all headings in Spanish" '[ "$(grep -c "^## [0-9]\. " <<<"$tu_es")" = 8 ] && grep -qx "## 1. El caso que seguimos" <<<"$tu_es" && grep -qx "## Abierto" <<<"$tu_es"'
+check "training-unit (en): all headings in English" 'grep -qx "## 1. The case we follow" <<<"$tu_en" && grep -qx "## 8. What you can ratify when done" <<<"$tu_en" && ! grep -q "{{VOC_" <<<"$tu_en"'
+check "training-unit (en): check-work prefixes match the template" 'for k in "$VOC_TU_CASE" ; do :; done; IAH_LANG=en bash -c ". \"$ROOT/bin/lib/vocab.sh\"; vocab_load; for p in \"\$VOC_TU_CASE\" \"\$VOC_TU_WALKTHROUGH\" \"\$VOC_TU_CONCEPTS\" \"\$VOC_TU_QUESTIONS\"; do grep -qF \"## \$p\" <<<\"$tu_en\" || exit 1; done"'
+check "training-unit (es): check-work prefixes match the template" 'IAH_LANG=es bash -c ". \"$ROOT/bin/lib/vocab.sh\"; vocab_load; for p in \"\$VOC_TU_CASE\" \"\$VOC_TU_WALKTHROUGH\" \"\$VOC_TU_CONCEPTS\" \"\$VOC_TU_QUESTIONS\"; do grep -qF \"## \$p\" <<<\"$tu_es\" || exit 1; done"'
+PRIV_TU="$HOME/source-repo/templates/training-unit.md"
+if [ -f "$PRIV_TU" ]; then   # only on a machine that also has the source repository
+  check "training-unit (es): same headings as the source template" '[ "$(grep "^## " "$PRIV_TU")" = "$(grep "^## " <<<"$tu_es")" ]'
+fi
 check "README keeps unfilled placeholders" '"$ROOT/bin/render-template" --repo "$TMP/en" README | grep -q "{{DATE}}"'
 check "unknown template is refused" '! "$ROOT/bin/render-template" --repo "$TMP/en" ../x 2>/dev/null'
 

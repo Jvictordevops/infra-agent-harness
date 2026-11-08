@@ -32,7 +32,21 @@ VOC_CORRECTED_BY="Corrected by"
 VOC_SUPERSEDED_BY="Superseded by"
 VOC_IDS_RENUMBERED_IN="Ids renumbered in"
 
-# Training unit sections checked by check-work (prefix of the heading)
+# Training unit (templates/training-unit.md): title, header labels and section headings
+VOC_TU_UNIT="Unit"
+VOC_TU_WHAT_FOR="What for"
+VOC_TU_LOAD="Load"
+VOC_TU_HOW_MADE="How it was made"
+VOC_TU_VERSIONS="Versions"
+VOC_TU_H1="1. The case we follow"
+VOC_TU_H2="2. The walkthrough, step by step"
+VOC_TU_H3="3. Why each piece is in our architecture"
+VOC_TU_H4="4. Concepts"
+VOC_TU_H5="5. Official reading (in order)"
+VOC_TU_H6="6. Exercise in kind"
+VOC_TU_H7="7. Questions to check yourself"
+VOC_TU_H8="8. What you can ratify when done"
+# Sections check-work requires in a unit (prefix of the heading)
 VOC_TU_CASE="1. The case"
 VOC_TU_WALKTHROUGH="2. The walkthrough"
 VOC_TU_CONCEPTS="4. Concepts"
