@@ -13,7 +13,7 @@ Generic notes for the agent tools the harness installs into (Claude Code, Claude
 
 ## Windows + WSL
 
-- Keep the repo inside WSL. The Claude desktop app on Windows reads `%USERPROFILE%\.claude` and cannot follow WSL symlinks, so `link-harness` **copies** `GLOBAL.md` (as `CLAUDE.md`, with a "generated" first line) and the skills there. Re-run it after a pull (the git hooks do). `LINK_HARNESS_WINDOWS=0` skips this part.
+- Keep the repo inside WSL. The Claude desktop app on Windows reads `%USERPROFILE%\.claude` and cannot follow WSL symlinks, so `link-harness` **copies** `GLOBAL.md` (as `CLAUDE.md`, with a "generated" first line) and, outside plugin mode, the skills there (in plugin mode install the plugin from the Windows side). Re-run it after a pull (the git hooks do). `LINK_HARNESS_WINDOWS=0` skips this part.
 - Run repo commands from the Windows side with:
 
   ```
@@ -25,7 +25,7 @@ Generic notes for the agent tools the harness installs into (Claude Code, Claude
   - From Git Bash, prefix `MSYS_NO_PATHCONV=1` so it does not rewrite `/home/...` paths.
 - If the SSH agent lives in a password manager, keep it unlocked for push, pull and signed commits (`agent refused operation` usually means a locked vault).
 - Claude hooks (`hooks/*`) are registered in the profile inside WSL (`~/.claude/settings.json`); the Windows app profile only receives `CLAUDE.md` and the skills.
-- `bin/doctor` checks a machine in a few seconds and prints no secrets.
+- `bin/doctor` checks a machine in a few seconds and prints no secrets. It is read-only: it runs `link-harness --dry-run` and reports what `bin/link-harness` would change.
 
 ## Read-only executors (`bin/ro`)
 

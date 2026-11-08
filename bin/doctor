@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Check (and fix what is safe) the setup of this machine for the harness. Idempotent.
-# Prints one summary to paste back. Never prints keys or tokens.
+# Check the setup of this machine for the harness. Read-only: it never changes your home or your repos
+# (link-harness runs with --dry-run; the only write is git fetch in the harness checkout, skipped with
+# IAH_NO_FETCH=1). Prints one summary to paste back. Never prints keys or tokens.
 # Usage: bin/doctor
 # Optional modules active for the repository (.harness.conf "modules=a,b", IAH_MODULES overrides) add
 # their checks from modules/<name>/doctor.sh.
@@ -19,7 +20,7 @@ R=(); ok() { R+=("OK    $*"); }; warn() { R+=("WARN  $*"); }; fail() { R+=("FAIL
 
 # 1. Harness checkout
 if git -C "$HARNESS" rev-parse --git-dir >/dev/null 2>&1; then
-  git -C "$HARNESS" fetch -q 2>/dev/null || warn "harness: git fetch failed (network / credentials?)"
+  [ "${IAH_NO_FETCH:-0}" = 1 ] || git -C "$HARNESS" fetch -q 2>/dev/null || warn "harness: git fetch failed (network / credentials?)"
   behind="$(git -C "$HARNESS" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo '?')"
   [ "$behind" = 0 ] && ok "harness up to date ($HARNESS)" || warn "harness behind its upstream by $behind: git -C $HARNESS pull --rebase"
 else
@@ -42,8 +43,7 @@ if [ -n "$REPO" ] && [ "$REPO" != "$HARNESS" ]; then
   hp="$(git -C "$REPO" config core.hooksPath || true)"; sl="$(stable_link)"
   if [ "$hp" = "$HARNESS/bin/hooks" ]; then ok "repo $REPO: hooksPath -> harness bin/hooks"
   elif [ "$hp" = "$sl/bin/hooks" ]; then ok "repo $REPO: hooksPath -> stable link bin/hooks ($sl)"
-  elif [ -z "$hp" ] && plugin_mode; then git -C "$REPO" config core.hooksPath "$sl/bin/hooks" && ok "repo $REPO: hooksPath set to $sl/bin/hooks (was missing)"
-  elif [ -z "$hp" ]; then git -C "$REPO" config core.hooksPath "$HARNESS/bin/hooks" && ok "repo $REPO: hooksPath set to $HARNESS/bin/hooks (was missing)"
+  elif [ -z "$hp" ]; then warn "repo $REPO: core.hooksPath is not set (git hooks inactive): cd $REPO && $HARNESS/bin/link-harness$(plugin_mode || echo "   (manual install: git -C $REPO config core.hooksPath $HARNESS/bin/hooks)")"
   else warn "repo $REPO: hooksPath is '$hp', not $HARNESS/bin/hooks (left as is)"; fi
   vocab_load "$REPO" 2>/dev/null; ok "repo $REPO: record language '$VOC_LANG' (.harness.conf)"
   ok "repo $REPO: check-work method '$(conf_method "$REPO" 2>/dev/null)' (.harness.conf / IAH_METHOD)"
@@ -60,7 +60,12 @@ done
 command -v gh >/dev/null && ok "gh present" || warn "gh missing (only needed for GitHub work)"
 
 # 4. Harness installed for the agents
-IAH_REPO="$REPO" "$HARNESS/bin/link-harness" --quiet && ok "link-harness run"
+lh_out="$(IAH_REPO="$REPO" "$HARNESS/bin/link-harness" --dry-run --quiet 2>/dev/null)"; lh_rc=$?
+lh_would="$(printf '%s\n' "$lh_out" | grep '^would: ' || true)"
+if [ "$lh_rc" -ne 0 ]; then fail "link-harness --dry-run failed (exit $lh_rc): run it by hand to see why"
+elif [ -z "$lh_would" ]; then ok "link-harness: nothing to do"
+else warn "link-harness would change $(printf '%s\n' "$lh_would" | wc -l | tr -d ' ') thing(s): run bin/link-harness
+$(printf '%s\n' "$lh_would" | sed 's/^/        /')"; fi
 cs="$HOME/.claude/settings.json"
 for h in ro-guard.sh block-destructive-platform.sh; do
   if jq -e --arg h "$h" '[.hooks.PreToolUse[]?.hooks[]?.command | select(endswith($h))] | length > 0' "$cs" >/dev/null 2>&1; then
@@ -78,10 +83,12 @@ rm -f "$tlog"
 
 # 5. GitHub credentials (names and prefixes only)
 if command -v gh >/dev/null; then
-  if gh auth status >/dev/null 2>&1; then
-    pfx="$(gh auth status 2>&1 | sed -n 's/.*Token: \(gh[a-z]_\).*/\1/p' | head -1)"
+  gstate="$(mktemp -d)"   # the GitHub CLI writes a device id under XDG_STATE_HOME; keep that out of your home
+  if XDG_STATE_HOME="$gstate" gh auth status >/dev/null 2>&1; then
+    pfx="$(XDG_STATE_HOME="$gstate" gh auth status 2>&1 | sed -n 's/.*Token: \(gh[a-z]_\).*/\1/p' | head -1)"
     case "$pfx" in ghp_) warn "gh uses a CLASSIC token (ghp_): gh auth logout && gh auth login --web";; "") ok "gh logged in";; *) ok "gh logged in (token type $pfx)";; esac
   else warn "gh not logged in (gh auth login --web)"; fi
+  rm -rf "$gstate"
 fi
 # Only where credentials are configured: shell/git/tool config files and small config dirs (no repos, no session logs).
 cfg=()

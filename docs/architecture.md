@@ -36,10 +36,10 @@ flowchart LR
 
 - Installed as a Claude Code plugin (this repo is also its own marketplace), the plugin provides the skills and puts `bin/` on the PATH of the Bash tool. A `SessionStart` hook (`hooks/stable-link/stable-link.sh`) keeps `~/.local/share/infra-agent-harness/current` pointing at the installed version, so git hooks have a path that survives updates.
 - `bin/link-harness` does the rest in your home: `GLOBAL.md` becomes `~/.claude/CLAUDE.md` and `~/.copilot/copilot-instructions.md`, `hooks/settings.base.json` is merged into `~/.claude/settings.json`, the work repo's `core.hooksPath` is set, and Copilot gets the skills.
-- Without the plugin (manual install), `link-harness` also symlinks the skills into `~/.claude/skills` (and `~/.copilot/skills`). In plugin mode it removes those links instead, so skills are not loaded twice.
+- Without the plugin (manual install), `link-harness` also symlinks the skills into `~/.claude/skills` (and `~/.copilot/skills`). In plugin mode it removes the links that point into this harness instead (links of another harness are kept), so skills are not loaded twice. `link-harness --dry-run` lists what it would change without writing; `bin/doctor` uses it.
 - The merge only adds: it unions `permissions.deny` and `permissions.ask`, registers a hook only if its script is not already registered, and keeps a `.bak-<date>` copy when the file changes. It needs `jq`.
 - The work repo points its git hooks at `<harness>/bin/hooks` (in plugin mode, `~/.local/share/infra-agent-harness/current/bin/hooks`) with `git config core.hooksPath`. That is the only link back to the harness. `post-merge` and `post-rewrite` re-run `link-harness` after a pull.
-- On WSL, the Windows apps cannot follow WSL symlinks, so `link-harness` also copies the skills and `GLOBAL.md` (as `CLAUDE.md`) into `%USERPROFILE%\.claude`. Hooks stay in the WSL profile. `LINK_HARNESS_WINDOWS=0` skips the copy.
+- On WSL, the Windows apps cannot follow WSL symlinks, so `link-harness` also copies the skills and `GLOBAL.md` (as `CLAUDE.md`) into `%USERPROFILE%\.claude`; in plugin mode it copies only `GLOBAL.md` (install the plugin from the Windows side). Hooks stay in the WSL profile. `LINK_HARNESS_WINDOWS=0` skips the copy.
 - `AGENTS.md` and `CLAUDE.md` in the work repo are 3-line pointers (`templates/root-pointer.md`), so the global text is not loaded twice.
 - The work repo is found from `$IAH_REPO`, or the git repo of the current directory.
 

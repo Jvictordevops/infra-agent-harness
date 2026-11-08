@@ -6,12 +6,13 @@
 
 link "$MODULE_DIR/bin/clip" "$HOME/.local/bin/cpush"
 link "$MODULE_DIR/bin/clip" "$HOME/.local/bin/cpull"
-if [ "$(uname)" = "Darwin" ] && ! grep -qs 'HOME/.local/bin' "$HOME/.zshrc"; then
+if [ "${DRY_RUN:-0}" = 1 ]; then :   # dry run: only the links above are simulated
+elif [ "$(uname)" = "Darwin" ] && ! grep -qs 'HOME/.local/bin' "$HOME/.zshrc"; then
   # shellcheck disable=SC2016
   echo 'export PATH="$HOME/.local/bin:$PATH"  # infra-agent-harness (cpush/cpull)' >> "$HOME/.zshrc"; say "added ~/.local/bin to PATH in ~/.zshrc"
 fi
 
-if [ "${LINK_HARNESS_WINDOWS:-1}" = 1 ] && { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; }; then
+if [ "${DRY_RUN:-0}" != 1 ] && [ "${LINK_HARNESS_WINDOWS:-1}" = 1 ] && { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; }; then
   ev_winprof="$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r' || true)"
   if [ -z "$ev_winprof" ]; then
     say "evidence: cannot resolve %USERPROFILE%; cpush.cmd / cpull.cmd skipped"

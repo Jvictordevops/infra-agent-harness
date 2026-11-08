@@ -46,7 +46,7 @@ Full detail and more diagrams: [docs/architecture.md](docs/architecture.md).
 - **Method** (`docs/method.md`, `docs/method-full.md`): `bin/new-work`, `bin/check-work`, `templates/`, English and Spanish vocabulary in `locale/`.
 - **Skills** (`skills/`): `new-project`, `load-project`, `close-task`, `init-context`, `troubleshoot`, `digest`, `parallel-audit`, `parallel-review`, `role`.
 - **Modules** (`modules/`): `evidence` (shared evidence store, encrypted archives), `two-machine` (architect and executor on two machines).
-- **Tools**: `bin/doctor` (checks a machine, fixes what is safe), `bin/denylist-scan` (used by this repo's own contributor hook).
+- **Tools**: `bin/doctor` (checks a machine, read-only), `bin/denylist-scan` (used by this repo's own contributor hook).
 
 ## Quick start
 
@@ -60,7 +60,9 @@ claude plugin install infra-agent-harness@infra-agent-harness
 ```
 
 - The plugin provides the skills and puts `bin/` (`check-work`, `new-work`, `ro`, `link-harness`...) on the PATH of the agent's Bash tool. A `SessionStart` hook keeps `~/.local/share/infra-agent-harness/current` pointing at the installed version.
-- Then, once, from your work repo (see the manual steps 2 and 3 below to create it), run `link-harness` from a terminal: it merges the permissions and guard hooks, links `GLOBAL.md`, sets the repo's git hooks and handles Copilot. Plugin commands are only on the agent's PATH, so from a terminal use the plugin directory, for example `~/.local/share/infra-agent-harness/current/bin/link-harness` (the link exists after the first Claude Code session with the plugin).
+- Start one Claude Code session after installing: its `SessionStart` hook creates the stable link. Then, once, from your work repo (see the manual steps 2 and 3 below to create it), run `link-harness` from a terminal: it merges the permissions and guard hooks, links `GLOBAL.md`, sets the repo's git hooks and handles Copilot. Plugin commands are only on the agent's PATH, so from a terminal use the plugin directory, for example `~/.local/share/infra-agent-harness/current/bin/link-harness` (the link exists after the first Claude Code session with the plugin). Copilot skill links always go through that stable link, never into the versioned plugin directory.
+- In plugin mode `link-harness` removes only the skill links in `~/.claude/skills` that point into this harness. Links that belong to another harness (for example a private work repo with its own skills) are kept, so a skill name may appear twice: prefixed (`infra-agent-harness:close-task`) and unprefixed. `link-harness --dry-run` prints what it would change and writes nothing; `bin/doctor` uses it and never writes.
+- On WSL the plugin mode does not copy skills into the Windows profile (it would overwrite skills of other harnesses): install the plugin from the Windows side with the same two `claude plugin` commands.
 - For development, add your clone instead: `claude plugin marketplace add <path to your clone>` (the plugin loads in place).
 
 ### Manual install
@@ -93,7 +95,7 @@ git config core.hooksPath ~/infra-agent-harness/bin/hooks
 
 - Then start your first work from the agent: ask for a new project and the `new-project` skill runs `bin/new-work`.
 - `link-harness` is idempotent and never removes your own settings. It reads the work repo of the current directory (or `$IAH_REPO`). The `post-merge` and `post-rewrite` hooks re-run it after each pull of the work repo; after pulling the harness, run it yourself.
-- A plugin-based install is planned, not available yet.
+- Prefer the plugin install above when you use Claude Code; the manual install is the fallback (and the only way for Copilot-only machines).
 
 ## Configuration
 
@@ -121,7 +123,6 @@ Version 0.1 is in progress and has not been released. What is described above ex
 
 Planned, not implemented (do not rely on any of these):
 
-- Claude Code plugin and marketplace install.
 - CI.
 - Security profiles: permissive, standard, strict, isolated.
 - Environments: corporate and personal.

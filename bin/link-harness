@@ -2,8 +2,11 @@
 # Install the harness for the agent tools of this machine. Idempotent; never removes your own settings.
 #   - skills/<name>            -> ~/.claude/skills/<name> and ~/.copilot/skills (symlinks).
 #     PLUGIN MODE (installed_plugins.json mentions infra-agent-harness@; IAH_PLUGIN=1|0 overrides): Claude Code
-#     gets the skills from the plugin, so no links are made in ~/.claude/skills and the ones that point into a
-#     harness skills/ folder are removed; Copilot still gets one link per skill. The work repo's core.hooksPath
+#     gets the skills from the plugin, so no links are made in ~/.claude/skills and the links that point into
+#     THIS harness (a folder whose .claude-plugin/plugin.json is named infra-agent-harness) are removed; links
+#     into any other harness are kept (the plugin's skill is then also available as infra-agent-harness:<n>).
+#     Copilot still gets one link per skill, always through the stable link (never the versioned plugin cache
+#     dir, deleted on update); a Copilot link that belongs to another harness is left alone. The work repo's core.hooksPath
 #     is set to <stable link>/bin/hooks (IAH_STABLE_LINK, default ~/.local/share/infra-agent-harness/current,
 #     kept by the plugin's SessionStart hook) when it is empty or points into a harness/plugin cache path;
 #     any other custom hooksPath is left alone with a warning.
@@ -14,27 +17,66 @@
 #     modules/<name>/link.sh is sourced and may use say/link above
 #   - WSL only: COPIES of skills and GLOBAL.md into the Windows profile (%USERPROFILE%\.claude),
 #     because the Windows apps cannot follow WSL symlinks. Re-run after a pull (bin/hooks/post-merge
-#     and post-rewrite do it). LINK_HARNESS_WINDOWS=0 skips this part.
-# Usage: link-harness [--quiet]   (bin/link-harness from a clone)
+#     and post-rewrite do it). LINK_HARNESS_WINDOWS=0 skips this part. In plugin mode the skills are NOT
+#     copied (install the plugin from the Windows side); only GLOBAL.md is.
+# Usage: link-harness [--quiet] [--dry-run]   (bin/link-harness from a clone)
+#   --dry-run prints "would: <action>" for everything it would change and writes nothing (bin/doctor uses it).
+# IAH_PROC_VERSION overrides the file used to detect WSL (/proc/version); only tests need it.
+# shellcheck disable=SC2088   # "~" in messages is literal text
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")/.." && pwd)"
 # shellcheck source-path=SCRIPTDIR source=lib/conf.sh
 . "$ROOT/bin/lib/conf.sh"
-QUIET=0; [ "${1:-}" = "--quiet" ] && QUIET=1
+QUIET=0; DRY_RUN=0
+for a in "$@"; do
+  case "$a" in
+    --quiet) QUIET=1 ;;
+    --dry-run) DRY_RUN=1 ;;
+    *) echo "usage: link-harness [--quiet] [--dry-run]" >&2; exit 2 ;;
+  esac
+done
+export DRY_RUN
 say() { [ "$QUIET" -eq 1 ] || echo "link-harness: $*"; }
+would() { echo "would: $*"; }   # dry-run only; printed even with --quiet
 WORK="${IAH_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"   # the repo with your works
 
 link() { # $1 target, $2 link path: create or fix a symlink, backing up a real file
   local target="$1" path="$2"
-  mkdir -p "$(dirname "$path")"
   if [ -L "$path" ]; then
     [ "$(readlink "$path")" = "$target" ] && return 0
+    if [ "$DRY_RUN" = 1 ]; then would "relink $path -> $target"; return 0; fi
     rm -f "$path"
   elif [ -e "$path" ]; then
+    if [ "$DRY_RUN" = 1 ]; then would "back up $path and link it -> $target"; return 0; fi
     mv "$path" "$path.bak-$(date +%Y%m%d%H%M%S)"; say "backed up $path"
+  elif [ "$DRY_RUN" = 1 ]; then would "link $path -> $target"; return 0
   fi
+  mkdir -p "$(dirname "$path")"
   ln -s "$target" "$path"; say "linked $path"
+}
+
+# is_this_harness <harness root>: exit 0 when <root>/.claude-plugin/plugin.json is named infra-agent-harness
+is_this_harness() {
+  local pj="$1/.claude-plugin/plugin.json" nm
+  [ -f "$pj" ] || return 1
+  if command -v jq >/dev/null 2>&1; then nm="$(jq -r '.name // empty' "$pj" 2>/dev/null || true)"
+  else nm="$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pj" | head -1)"; fi
+  [ "$nm" = infra-agent-harness ]
+}
+
+# link_is_ours <link path>: the link points into this harness: a folder named infra-agent-harness in
+# plugin.json, or a (possibly already deleted) version dir of this plugin in the plugin cache
+link_is_ours() {
+  case "$(readlink "$1")" in */plugins/cache/*/infra-agent-harness/*) return 0 ;; esac
+  is_this_harness "$(link_root "$1")"
+}
+
+# link_root <link path> -> harness root implied by the link target (<root>/skills/<n>)
+link_root() {
+  local t; t="$(readlink "$1")"
+  case "$t" in /*) ;; *) t="$(dirname "$1")/$t" ;; esac
+  printf '%s' "$(dirname "$t")/.."
 }
 
 skills() { for d in "$ROOT"/skills/*/; do [ -d "$d" ] && basename "$d"; done; }
@@ -44,29 +86,61 @@ if [ -n "$WORK" ] && [ -f "$WORK/GLOBAL.md" ]; then
   link "$WORK/GLOBAL.md" "$HOME/.claude/CLAUDE.md"
   link "$WORK/GLOBAL.md" "$HOME/.copilot/copilot-instructions.md"
 fi
+KEPT=" "   # skill names whose ~/.claude/skills/<n> link was kept because it is not this harness's
 if plugin_mode; then
   say "plugin mode: skills come from the plugin"
-  for n in $(skills); do # drop the old manual links (only those that point into a harness skills/ folder)
+  for n in $(skills); do # drop the old manual links, but only those that belong to this harness
     p="$HOME/.claude/skills/$n"
     if [ -L "$p" ]; then
-      t="$(readlink "$p")"
-      if [ -x "$(dirname "$t")/../bin/link-harness" ]; then rm -f "$p"; say "removed $p (the plugin provides it)"; fi
+      if link_is_ours "$p"; then
+        if [ "$DRY_RUN" = 1 ]; then would "remove $p (the plugin provides it)"
+        else rm -f "$p"; say "removed $p (the plugin provides it)"; fi
+      else
+        KEPT="$KEPT$n "
+        say "kept $p -> $(readlink "$p") (not this harness; the plugin's skill is available as infra-agent-harness:$n)"
+      fi
     fi
   done
-  # Copilot has no plugin: one link per skill, through the stable link when it exists
-  if [ -L "$HOME/.copilot/skills" ] && [ "$(readlink "$HOME/.copilot/skills")" = "$HOME/.claude/skills" ]; then
-    rm -f "$HOME/.copilot/skills"; say "replaced the manual-install link ~/.copilot/skills by a real folder"
+  # Copilot has no plugin: one link per skill, always through the stable link (the versioned cache dir
+  # is deleted on update). A link of another harness is never replaced.
+  sl="$(stable_link)"; cs="$HOME/.copilot/skills"; cs_link=0
+  if [ -L "$cs" ]; then
+    cs_link=1
+    if [ "$(readlink "$cs")" = "$HOME/.claude/skills" ]; then
+      if [ "$KEPT" != " " ]; then
+        say "~/.copilot/skills -> ~/.claude/skills left as is: Copilot keeps using ~/.claude/skills (it holds links of another harness)"
+      else
+        if [ "$DRY_RUN" = 1 ]; then would "replace the manual-install link ~/.copilot/skills by a real folder"
+        else rm -f "$cs"; say "replaced the manual-install link ~/.copilot/skills by a real folder"; fi
+        cs_link=0
+      fi
+    else
+      say "~/.copilot/skills is a link to $(readlink "$cs"), left as is"
+    fi
   fi
-  if [ -n "$(skills)" ] && [ ! -L "$HOME/.copilot/skills" ]; then
-    sl="$(stable_link)"; src="$ROOT"; [ -d "$sl/skills" ] && src="$sl"
-    for n in $(skills); do link "$src/skills/$n" "$HOME/.copilot/skills/$n"; done
+  if [ -n "$(skills)" ] && [ "$cs_link" = 0 ]; then
+    [ -d "$sl/skills" ] || echo "link-harness: warning: stable link $sl does not exist yet; the Copilot skill links resolve after the first Claude Code session (its SessionStart hook creates it)" >&2
+    for n in $(skills); do
+      cp_="$cs/$n"; want="$sl/skills/$n"
+      if [ -L "$cp_" ]; then
+        cur="$(readlink "$cp_")"
+        # replace only a link of this harness: stable path, this harness root, or its manual-install link
+        if [ "$cur" != "$want" ] && ! { case "$cur" in "$sl"/*) true ;; "$HOME/.claude/skills/$n") case "$KEPT" in *" $n "*) false ;; *) true ;; esac ;; *) link_is_ours "$cp_" ;; esac; }; then
+          say "kept $cp_ -> $cur (not this harness)"; continue
+        fi
+      elif [ -e "$cp_" ]; then
+        say "kept $cp_ (not a link; not touched)"; continue
+      fi
+      link "$want" "$cp_"
+    done
   fi
   if [ -n "$WORK" ] && [ "$WORK" != "$ROOT" ] && git -C "$WORK" rev-parse --git-dir >/dev/null 2>&1; then
     want="$(stable_link)/bin/hooks"; hp="$(git -C "$WORK" config core.hooksPath || true)"
     case "$hp" in
       "$want") ;;
       ""|*/infra-agent-harness/bin/hooks|*/plugins/cache/*|"$ROOT/bin/hooks")
-        git -C "$WORK" config core.hooksPath "$want"; say "set core.hooksPath of $WORK to $want" ;;
+        if [ "$DRY_RUN" = 1 ]; then would "set core.hooksPath of $WORK to $want"
+        else git -C "$WORK" config core.hooksPath "$want"; say "set core.hooksPath of $WORK to $want"; fi ;;
       *) echo "link-harness: warning: core.hooksPath of $WORK is '$hp' (left as is; plugin mode would use $want)" >&2 ;;
     esac
   fi
@@ -85,12 +159,17 @@ fi
 # permissions.deny/ask; each base hook added unless a hook with the same script is already
 # registered). Never removes anything; backs up the old file when it changes.
 merge_settings() {
-  local base="$ROOT/hooks/settings.base.json" dst="$HOME/.claude/settings.json" new fresh=0 hroot="$ROOT"
+  local base="$ROOT/hooks/settings.base.json" dst="$HOME/.claude/settings.json" new fresh=0 hroot="$ROOT" src
   # Plugin mode: $ROOT is the versioned cache directory, deleted some days after an update. Hook commands
   # must use the stable link, or the guards would silently stop running after the next update.
   if plugin_mode; then hroot="$(stable_link)"; fi
   command -v jq >/dev/null || { say "jq missing: settings not merged"; return 0; }
-  mkdir -p "$(dirname "$dst")"; [ -s "$dst" ] || { echo '{}' > "$dst"; fresh=1; }
+  src="$dst"
+  if [ ! -s "$dst" ]; then
+    fresh=1
+    if [ "$DRY_RUN" = 1 ]; then src="$(mktemp)"; echo '{}' > "$src"
+    else mkdir -p "$(dirname "$dst")"; echo '{}' > "$dst"; fi
+  fi
   new="$(jq --arg root "$hroot" --slurpfile b "$base" '
     ($b[0] | del(._comment) | walk(if type == "string" then gsub("__ROOT__"; $root) else . end)) as $base
     | .permissions.deny = ((.permissions.deny // []) + ($base.permissions.deny - (.permissions.deny // [])))
@@ -101,11 +180,15 @@ merge_settings() {
           then .
           else .hooks.PreToolUse = ((.hooks.PreToolUse // []) + [{matcher: $x.m, hooks: [$x.h]}])
           end)
-  ' "$dst")" || { say "cannot parse $dst: settings not merged"; return 0; }
-  if [ "$new" != "$(jq . "$dst")" ]; then
-    [ "$fresh" = 1 ] || cp "$dst" "$dst.bak-$(date +%Y%m%d%H%M%S)"
-    printf '%s\n' "$new" > "$dst"; say "merged hooks/settings.base.json into $dst"
+  ' "$src")" || { say "cannot parse $dst: settings not merged"; [ "$src" = "$dst" ] || rm -f "$src"; return 0; }
+  if [ "$new" != "$(jq . "$src")" ]; then
+    if [ "$DRY_RUN" = 1 ]; then would "merge hooks/settings.base.json into $dst"
+    else
+      [ "$fresh" = 1 ] || cp "$dst" "$dst.bak-$(date +%Y%m%d%H%M%S)"
+      printf '%s\n' "$new" > "$dst"; say "merged hooks/settings.base.json into $dst"
+    fi
   fi
+  [ "$src" = "$dst" ] || rm -f "$src"
 }
 merge_settings
 
@@ -122,24 +205,31 @@ for m in $(conf_modules "$WORK"); do
 done
 
 # 2. Windows profile of the Claude app (only from WSL)
-if [ "${LINK_HARNESS_WINDOWS:-1}" = 1 ] && grep -qi microsoft /proc/version 2>/dev/null; then
-  winprof="$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')"
+if [ "${LINK_HARNESS_WINDOWS:-1}" = 1 ] && grep -qi microsoft "${IAH_PROC_VERSION:-/proc/version}" 2>/dev/null; then
+  winprof="$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r' || true)"
   [ -n "$winprof" ] || { say "cannot resolve %USERPROFILE%; Windows side skipped"; exit 0; }
   wc="$(wslpath "$winprof")/.claude"
-  mkdir -p "$wc/skills"
   if [ -n "$WORK" ] && [ -f "$WORK/GLOBAL.md" ]; then
-    { echo "<!-- Generated by infra-agent-harness/bin/link-harness from GLOBAL.md. Do not edit here. -->"
-      cat "$WORK/GLOBAL.md"; } > "$wc/CLAUDE.md.new"
-    if ! cmp -s "$wc/CLAUDE.md.new" "$wc/CLAUDE.md" 2>/dev/null; then
-      [ -e "$wc/CLAUDE.md" ] && ! head -1 "$wc/CLAUDE.md" | grep -q "link-harness" && cp "$wc/CLAUDE.md" "$wc/CLAUDE.md.bak-$(date +%Y%m%d%H%M%S)"
-      mv "$wc/CLAUDE.md.new" "$wc/CLAUDE.md"; say "updated Windows CLAUDE.md"
-    else rm -f "$wc/CLAUDE.md.new"; fi
-  fi
-  for n in $(skills); do
-    mkdir -p "$wc/skills/$n"
-    if ! diff -rq "$ROOT/skills/$n" "$wc/skills/$n" >/dev/null 2>&1; then
-      rm -rf "$wc/skills/$n"; cp -r "$ROOT/skills/$n" "$wc/skills/$n"; say "copied skill $n to Windows"
+    gen() { echo "<!-- Generated by infra-agent-harness/bin/link-harness from GLOBAL.md. Do not edit here. -->"; cat "$WORK/GLOBAL.md"; }
+    if [ "$DRY_RUN" = 1 ]; then
+      gen | cmp -s - "$wc/CLAUDE.md" 2>/dev/null || would "write Windows CLAUDE.md ($wc/CLAUDE.md) from $WORK/GLOBAL.md"
+    else
+      mkdir -p "$wc"; gen > "$wc/CLAUDE.md.new"
+      if ! cmp -s "$wc/CLAUDE.md.new" "$wc/CLAUDE.md" 2>/dev/null; then
+        if [ -e "$wc/CLAUDE.md" ] && ! head -1 "$wc/CLAUDE.md" | grep -q "link-harness"; then cp "$wc/CLAUDE.md" "$wc/CLAUDE.md.bak-$(date +%Y%m%d%H%M%S)"; fi
+        mv "$wc/CLAUDE.md.new" "$wc/CLAUDE.md"; say "updated Windows CLAUDE.md"
+      else rm -f "$wc/CLAUDE.md.new"; fi
     fi
-  done
+  fi
+  if plugin_mode; then
+    say "plugin mode: skills are not copied to Windows; install the plugin from the Windows side (claude plugin marketplace add Jvictordevops/infra-agent-harness; claude plugin install infra-agent-harness@infra-agent-harness)"
+  else
+    for n in $(skills); do
+      if ! diff -rq "$ROOT/skills/$n" "$wc/skills/$n" >/dev/null 2>&1; then
+        if [ "$DRY_RUN" = 1 ]; then would "copy skill $n to Windows ($wc/skills/$n)"
+        else mkdir -p "$wc/skills/$n"; rm -rf "$wc/skills/$n"; cp -r "$ROOT/skills/$n" "$wc/skills/$n"; say "copied skill $n to Windows"; fi
+      fi
+    done
+  fi
 fi
 say "done"
