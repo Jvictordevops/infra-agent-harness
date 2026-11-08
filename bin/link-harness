@@ -259,7 +259,7 @@ for m in $(conf_modules "$WORK"); do
     # shellcheck disable=SC2034  # read by the sourced modules/<m>/link.sh
     if plugin_mode; then MODULE_LINK_DIR="$(stable_link)/modules/$m"; else MODULE_LINK_DIR="$MODULE_DIR"; fi
     # shellcheck source=/dev/null
-    . "$MODULE_DIR/link.sh"
+    . "$MODULE_DIR/link.sh" || echo "link-harness: warning: module $m: link.sh ended with an error; continuing" >&2
   fi
 done
 

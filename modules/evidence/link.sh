@@ -25,7 +25,7 @@ if [ "${DRY_RUN:-0}" != 1 ] && [ "${LINK_HARNESS_WINDOWS:-1}" = 1 ] && { [ -n "$
       else mv "$ev_wb/$ev_c.cmd.new" "$ev_wb/$ev_c.cmd"; say "wrote $ev_winprof\\bin\\$ev_c.cmd"; fi
     done
     # shellcheck disable=SC2016
-    powershell.exe -NoProfile -Command '$b = Join-Path $env:USERPROFILE "bin"; $p = [Environment]::GetEnvironmentVariable("Path","User"); if (($p -split ";") -notcontains $b) { [Environment]::SetEnvironmentVariable("Path", ($p.TrimEnd(";") + ";" + $b), "User"); "added" }' 2>/dev/null \
-      | grep -q added && say "added %USERPROFILE%\\bin to the user PATH (open a new terminal)"
+    if powershell.exe -NoProfile -Command '$b = Join-Path $env:USERPROFILE "bin"; $p = [Environment]::GetEnvironmentVariable("Path","User"); if (($p -split ";") -notcontains $b) { [Environment]::SetEnvironmentVariable("Path", ($p.TrimEnd(";") + ";" + $b), "User"); "added" }' 2>/dev/null \
+      | grep -q added; then say "added %USERPROFILE%\\bin to the user PATH (open a new terminal)"; fi
   fi
 fi

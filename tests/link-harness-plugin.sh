@@ -92,6 +92,14 @@ H7="$(new_home wsl)"
 grep -q "skills are not copied to Windows" "$TMP/wsl.out" || ko "no message about installing the plugin on the Windows side"
 (cd "$H7/work" && PATH="$BIN:$PATH" IAH_PROC_VERSION="$TMP/proc-version" HOME="$H7" IAH_PLUGIN=0 "$ROOT/bin/link-harness" --quiet >/dev/null 2>&1)
 [ -f "$WIN/.claude/skills/digest/SKILL.md" ] || ko "manual mode no longer copies skills to Windows"
+# a module whose link.sh ends with a failed test (here: Windows PATH already has %USERPROFILE%\bin, so the
+# evidence module's 'grep -q added && say' is false) must not stop link-harness under set -e
+printf '#!/bin/sh\nexit 0\n' > "$BIN/powershell.exe"; chmod +x "$BIN/powershell.exe"
+H9="$(new_home wslmod)"; WIN9="$TMP/win9"; mkdir -p "$WIN9"
+printf '#!/bin/sh\necho "%s"\n' "$WIN9" > "$BIN/wslpath"
+(cd "$H9/work" && PATH="$BIN:$PATH" WSL_DISTRO_NAME=fake IAH_PROC_VERSION="$TMP/proc-version" HOME="$H9" IAH_PLUGIN=1 IAH_MODULES=evidence "$ROOT/bin/link-harness" >"$TMP/wsl9.out" 2>&1) || ko "link-harness with the evidence module exited non-zero on WSL"
+[ -f "$WIN9/.claude/CLAUDE.md" ] || ko "link-harness stopped after the evidence module: Windows CLAUDE.md not written"
+grep -q "link-harness: done" "$TMP/wsl9.out" || ko "link-harness did not reach the end with the evidence module on WSL"
 
 # 5. doctor is read-only: home and work repo config unchanged
 H8="$(new_home doctor)"; mkdir -p "$H8/.claude/plugins"
