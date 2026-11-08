@@ -67,8 +67,17 @@ elif [ -z "$lh_would" ]; then ok "link-harness: nothing to do"
 else warn "link-harness would change $(printf '%s\n' "$lh_would" | wc -l | tr -d ' ') thing(s): run bin/link-harness
 $(printf '%s\n' "$lh_would" | sed 's/^/        /')"; fi
 cs="$HOME/.claude/settings.json"
+ph="$HARNESS/hooks/hooks.json"
 for h in ro-guard.sh block-destructive-platform.sh; do
-  if jq -e --arg h "$h" '[.hooks.PreToolUse[]?.hooks[]?.command | select(endswith($h))] | length > 0' "$cs" >/dev/null 2>&1; then
+  in_settings="$(jq -r --arg h "$h" '[.hooks.PreToolUse[]?.hooks[]?.command | select(endswith("/" + $h))] | .[0] // empty' "$cs" 2>/dev/null)"
+  if plugin_mode; then
+    if jq -e --arg h "$h" '[.hooks.PreToolUse[]?.hooks[]?.command | select(contains("${CLAUDE_PLUGIN_ROOT}") and endswith($h + "\""))] | length > 0' "$ph" >/dev/null 2>&1; then
+      ok "hook ${h%.sh} registered by the plugin"
+      [ -z "$in_settings" ] || warn "hook ${h%.sh} also in settings.json ($in_settings): runs twice"
+    elif [ -n "$in_settings" ]; then
+      warn "hook ${h%.sh} not in the plugin's hooks/hooks.json; only in settings.json ($in_settings)"
+    else fail "hook ${h%.sh} registered nowhere (plugin hooks/hooks.json and ~/.claude/settings.json)"; fi
+  elif [ -n "$in_settings" ]; then
     ok "hook $h registered in ~/.claude/settings.json"
   else fail "hook $h not registered in ~/.claude/settings.json (bin/link-harness)"; fi
 done

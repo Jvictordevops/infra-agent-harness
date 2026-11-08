@@ -9,6 +9,7 @@ RO="$ROOT/bin/ro"
 HOOK="$ROOT/hooks/ro-guard/ro-guard.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+IAH_HOOK_LOG="$TMP/hook-decisions.jsonl"; export IAH_HOOK_LOG   # keep test blocks out of the real decision log
 mkdir -p "$TMP/code/repo/.git" "$TMP/code/repo/charts"
 touch "$TMP/code/repo/values.yaml" "$TMP/code/repo/.env" "$TMP/code/repo/.git/config" "$TMP/code/repo/terraform.tfstate"
 export RO_ROOTS="$TMP/code" RO_MODE_FILE="$TMP/ro-mode"

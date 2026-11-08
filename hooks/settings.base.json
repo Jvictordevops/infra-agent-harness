@@ -1,5 +1,5 @@
 {
-  "_comment": "Base merged into ~/.claude/settings.json by bin/link-harness (union, never removes). __ROOT__ = this repo. deny = same family as hooks/block-destructive-platform; ask = GLOBAL.md 'Defensivos' (confirm and show the exact command).",
+  "_comment": "Base merged into ~/.claude/settings.json by bin/link-harness (union). Manual install: permissions + hooks, __ROOT__ = this repo. Plugin mode: only permissions (hooks/hooks.json registers the guards). deny = same family as hooks/block-destructive-platform; ask = GLOBAL.md 'Defensivos' (confirm and show the exact command).",
   "permissions": {
     "deny": [
       "Bash(terraform destroy *)",

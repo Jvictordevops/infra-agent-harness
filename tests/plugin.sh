@@ -31,6 +31,24 @@ while IFS= read -r cmd; do
 done < <(jq -r '.hooks[][].hooks[].command' "$H")
 [ "$n" -gt 0 ] || ko "hooks.json has no commands"
 
+# 2b. PreToolUse/Bash registers both guards through ${CLAUDE_PLUGIN_ROOT}, and they work run from the plugin root
+for g in ro-guard block-destructive-platform; do
+  jq -e --arg c "\"\${CLAUDE_PLUGIN_ROOT}/hooks/$g/$g.sh\"" \
+    '[.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks[].command] | index($c) != null' "$H" >/dev/null \
+    || ko "hooks.json: PreToolUse/Bash lacks the $g guard"
+  [ -x "$ROOT/hooks/$g/$g.sh" ] || ko "$g.sh missing or not executable"
+done
+jq -e '.hooks.SessionStart | length > 0' "$H" >/dev/null || ko "hooks.json: SessionStart hook lost"
+feed() { jq -n --arg c "$2" '{tool_input:{command:$c}}' | env CLAUDE_PLUGIN_ROOT="$ROOT" IAH_HOOK_LOG="$TMP/hook.log" RO_MODE_FILE="$TMP/ro-mode" HOME="$TMP/hhome" "$ROOT/hooks/$1/$1.sh"; }
+mkdir -p "$TMP/hhome"; echo "test" > "$TMP/ro-mode"
+feed ro-guard "kubectl get pods" >/dev/null 2>&1; [ "$?" = 2 ] || ko "ro-guard (plugin root) did not block kubectl in read-only mode"
+feed ro-guard "ls -l" >/dev/null 2>&1 || ko "ro-guard (plugin root) blocked a harmless command"
+out="$(feed block-destructive-platform "kubectl delete pod x" 2>&1 || true)"
+case "$out" in *'"block"'*) ;; *) ko "block-destructive-platform (plugin root) did not block a destructive command" ;; esac
+out="$(feed block-destructive-platform "kubectl get pods" 2>&1 || true)"
+[ -z "$out" ] || ko "block-destructive-platform (plugin root) blocked a harmless command"
+[ -s "$TMP/hook.log" ] || ko "guards (plugin root) wrote no decision log"
+
 # 3. stable-link
 SL="$ROOT/hooks/stable-link/stable-link.sh"
 mkdir -p "$TMP/rootA/bin/hooks" "$TMP/rootB/bin/hooks" "$TMP/nohooks/bin"

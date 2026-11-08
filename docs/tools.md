@@ -6,7 +6,7 @@ Generic notes for the agent tools the harness installs into (Claude Code, Claude
 
 - `GLOBAL.md` (root of the consumer repo, copied from `templates/GLOBAL.md`) = the always-loaded global instructions. `~/.claude/CLAUDE.md` and `~/.copilot/copilot-instructions.md` are symlinks to it.
 - `AGENTS.md` and `CLAUDE.md` in the repo root = 3-line pointers to `GLOBAL.md`, both copied from `templates/root-pointer.md`. They are pointers, not copies, so the tool does not load the same text twice (global + repo) when the working directory is the repo.
-- Skills in Claude Code, plugin install: the plugin provides `skills/<name>/` and puts its `bin/` on the PATH of the Bash tool (skills call `check-work`, `new-work`, `ro`... by bare name). A `SessionStart` hook keeps `~/.local/share/infra-agent-harness/current` pointing at the installed plugin. `link-harness` then only does permissions, `GLOBAL.md`, git hooks and Copilot.
+- Skills in Claude Code, plugin install: the plugin provides `skills/<name>/` and puts its `bin/` on the PATH of the Bash tool (skills call `check-work`, `new-work`, `ro`... by bare name). A `SessionStart` hook keeps `~/.local/share/infra-agent-harness/current` pointing at the installed plugin. The same plugin registers the `ro-guard` and `block-destructive-platform` guards (PreToolUse on Bash) through `hooks/hooks.json`, so they are active as soon as it is installed (profile fixed to `standard` until profiles land). `link-harness` then only does the `permissions.deny` / `permissions.ask` rules (plugins cannot ship them), `GLOBAL.md`, git hooks and Copilot.
 - Skills, manual install: source in `skills/<name>/` of the harness, symlinked from `~/.claude/skills/<name>`. `~/.copilot/skills` points to `~/.claude/skills` (or, if it is a real folder, gets one link per skill). Plugin mode is detected from `~/.claude/plugins/installed_plugins.json`; `IAH_PLUGIN=1|0` overrides.
 - Path-specific instructions: `instructions/*.instructions.md` and `<repo>/.github/instructions/*.instructions.md`.
 - `bin/link-harness` installs all of this. It is idempotent, backs up a real file before replacing it with a link, and never removes your own settings. The `post-merge` and `post-rewrite` git hooks re-run it after every pull or rebase.
@@ -44,10 +44,10 @@ Generic notes for the agent tools the harness installs into (Claude Code, Claude
 
 ### Hook registration
 
-- `bin/link-harness` merges `hooks/settings.base.json` into `~/.claude/settings.json` (macOS, Linux, WSL): registers `ro-guard` and `block-destructive-platform` as PreToolUse hooks on Bash and adds the `permissions.deny` / `permissions.ask` rules (destructive commands denied; force push, hard reset, `apply` and `helm install/upgrade` ask first).
+- `bin/link-harness` merges `hooks/settings.base.json` into `~/.claude/settings.json` (macOS, Linux, WSL). Manual install: registers `ro-guard` and `block-destructive-platform` as PreToolUse hooks on Bash. Plugin mode: the plugin registers them, so it adds no hooks and removes the entries of this harness under the stable link that an earlier run added (they would run twice; the file is backed up first, and an entry that points to another harness is kept with a warning). In both modes it adds the `permissions.deny` / `permissions.ask` rules (destructive commands denied; force push, hard reset, `apply` and `helm install/upgrade` ask first).
 - It only adds: it never removes anything, skips a hook whose script is already registered, and leaves a `settings.json.bak-<date>` copy when the file changes. It needs `jq`.
 - `hooks/confidence-nudge` (UserPromptSubmit) is not in the base file; register it yourself if you want it. It adds a reminder to end troubleshooting conclusions with a confidence level.
-- `bin/doctor` checks the registration and runs the guards' tests (`tests/block-destructive.sh`, `tests/ro.sh`).
+- `bin/doctor` checks the registration (in plugin mode: registered by the plugin's `hooks/hooks.json`; WARN if the same guard is also in `~/.claude/settings.json`) and runs the guards' tests (`tests/block-destructive.sh`, `tests/ro.sh`).
 
 ### Decision log
 

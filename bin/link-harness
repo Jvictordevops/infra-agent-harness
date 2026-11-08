@@ -12,7 +12,8 @@
 #     any other custom hooksPath is left alone with a warning.
 #   - GLOBAL.md of the work repo (if present) -> ~/.claude/CLAUDE.md and ~/.copilot/copilot-instructions.md
 #     (work repo: $IAH_REPO, else the git repository of the current directory)
-#   - hooks/settings.base.json -> merged into ~/.claude/settings.json (guards + deny/ask rules)
+#   - hooks/settings.base.json -> merged into ~/.claude/settings.json (guards + deny/ask rules). Plugin mode: only
+#     deny/ask (the plugin's hooks/hooks.json registers the guards); stable-link guard entries of older runs are removed.
 #   - optional modules active for the repository (.harness.conf "modules=a,b", IAH_MODULES overrides):
 #     modules/<name>/link.sh is sourced and may use say/link above
 #   - WSL only: COPIES of skills and GLOBAL.md into the Windows profile (%USERPROFILE%\.claude),
@@ -157,35 +158,66 @@ fi
 
 # Claude Code settings: merge hooks/settings.base.json into ~/.claude/settings.json (union of
 # permissions.deny/ask; each base hook added unless a hook with the same script is already
-# registered). Never removes anything; backs up the old file when it changes.
+# registered). Backs up the old file when it changes.
+# PLUGIN MODE: only permissions.deny/ask are merged (plugins cannot ship permission rules); the guard hooks
+# come from the plugin's hooks/hooks.json, so none are added, and the entries an earlier plugin-mode run
+# added (exactly <stable link>/hooks/<guard>/<guard>.sh) are removed, or they would run twice. A guard entry
+# that points anywhere else (another harness) is kept with a message.
 merge_settings() {
   local base="$ROOT/hooks/settings.base.json" dst="$HOME/.claude/settings.json" new fresh=0 hroot="$ROOT" src
+  local plug=0 drop='[]' c
   # Plugin mode: $ROOT is the versioned cache directory, deleted some days after an update. Hook commands
-  # must use the stable link, or the guards would silently stop running after the next update.
-  if plugin_mode; then hroot="$(stable_link)"; fi
+  # (manual mode only) and the entries to remove use the stable link.
+  if plugin_mode; then plug=1; hroot="$(stable_link)"; fi
   command -v jq >/dev/null || { say "jq missing: settings not merged"; return 0; }
   src="$dst"
   if [ ! -s "$dst" ]; then
     fresh=1
     if [ "$DRY_RUN" = 1 ]; then src="$(mktemp)"; echo '{}' > "$src"
     else mkdir -p "$(dirname "$dst")"; echo '{}' > "$dst"; fi
+  elif [ "$plug" = 1 ]; then
+    drop="$(jq -c --arg root "$hroot" '[$root + "/hooks/ro-guard/ro-guard.sh", $root + "/hooks/block-destructive-platform/block-destructive-platform.sh"]' <<<'null')"
+    while IFS= read -r c; do
+      [ -n "$c" ] || continue
+      if jq -e --arg c "$c" 'index($c)' <<<"$drop" >/dev/null; then
+        if [ "$DRY_RUN" = 1 ]; then would "remove hook $c from settings.json (the plugin registers it)"
+        else say "removing hook $c from settings.json (the plugin registers it)"; fi
+      else
+        say "kept hook $c in settings.json (not this harness; the guard will run twice: the plugin also registers it)"
+      fi
+    done < <(jq -r '.hooks.PreToolUse[]?.hooks[]?.command // empty | select(endswith("/ro-guard.sh") or endswith("/block-destructive-platform.sh"))' "$dst" 2>/dev/null || true)
   fi
-  new="$(jq --arg root "$hroot" --slurpfile b "$base" '
+  new="$(jq --arg root "$hroot" --argjson plug "$plug" --argjson drop "$drop" --slurpfile b "$base" '
     ($b[0] | del(._comment) | walk(if type == "string" then gsub("__ROOT__"; $root) else . end)) as $base
     | .permissions.deny = ((.permissions.deny // []) + ($base.permissions.deny - (.permissions.deny // [])))
     | .permissions.ask  = ((.permissions.ask  // []) + ($base.permissions.ask  - (.permissions.ask  // [])))
-    | reduce ($base.hooks.PreToolUse[] | .matcher as $m | .hooks[] | {m: $m, h: .}) as $x (.;
-        ($x.h.command | split("/") | last) as $script
-        | if [(.hooks.PreToolUse // [])[] | .hooks[]? | .command | split("/") | last] | index($script)
-          then .
-          else .hooks.PreToolUse = ((.hooks.PreToolUse // []) + [{matcher: $x.m, hooks: [$x.h]}])
-          end)
+    | if $plug == 1 then
+        if (.hooks.PreToolUse | type) == "array" then
+          .hooks.PreToolUse |= map(
+            if any(.hooks[]?; (.command? // "") as $c | $drop | index($c))
+            then (.hooks |= map(select((.command? // "") as $c | ($drop | index($c)) | not))) | select(.hooks | length > 0)
+            else . end)
+          | if (.hooks.PreToolUse | length) == 0 then del(.hooks.PreToolUse) else . end
+          | if (.hooks | length) == 0 then del(.hooks) else . end
+        else . end
+      else
+        reduce ($base.hooks.PreToolUse[] | .matcher as $m | .hooks[] | {m: $m, h: .}) as $x (.;
+          ($x.h.command | split("/") | last) as $script
+          | if [(.hooks.PreToolUse // [])[] | .hooks[]? | .command | split("/") | last] | index($script)
+            then .
+            else .hooks.PreToolUse = ((.hooks.PreToolUse // []) + [{matcher: $x.m, hooks: [$x.h]}])
+            end)
+      end
   ' "$src")" || { say "cannot parse $dst: settings not merged"; [ "$src" = "$dst" ] || rm -f "$src"; return 0; }
   if [ "$new" != "$(jq . "$src")" ]; then
-    if [ "$DRY_RUN" = 1 ]; then would "merge hooks/settings.base.json into $dst"
+    if [ "$DRY_RUN" = 1 ]; then
+      if [ "$plug" = 1 ]; then would "merge permissions of hooks/settings.base.json into $dst"
+      else would "merge hooks/settings.base.json into $dst"; fi
     else
       [ "$fresh" = 1 ] || cp "$dst" "$dst.bak-$(date +%Y%m%d%H%M%S)"
-      printf '%s\n' "$new" > "$dst"; say "merged hooks/settings.base.json into $dst"
+      printf '%s\n' "$new" > "$dst"
+      if [ "$plug" = 1 ]; then say "merged permissions of hooks/settings.base.json into $dst"
+      else say "merged hooks/settings.base.json into $dst"; fi
     fi
   fi
   [ "$src" = "$dst" ] || rm -f "$src"

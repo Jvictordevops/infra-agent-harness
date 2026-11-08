@@ -62,11 +62,55 @@ git -C "$TMP/work" config core.hooksPath "/home/x/.claude/plugins/cache/m/infra-
 (cd "$TMP/work" && IAH_PLUGIN=1 HOME="$TMP" LINK_HARNESS_WINDOWS=0 "$ROOT/bin/link-harness" --quiet)
 [ "$(git -C "$TMP/work" config core.hooksPath)" = "$IAH_STABLE_LINK/bin/hooks" ] || { echo "FAIL: plugin cache hooksPath not replaced"; fail=1; }
 
-# 6. Plugin mode, fresh settings: guard hooks point at the stable link, never at the versioned plugin dir
+# 6. Plugin mode, fresh settings: deny/ask rules only, never hooks (the plugin registers the guards)
+SL="$IAH_STABLE_LINK"; mkdir -p "$SL/skills"
+prun() { (cd "$TMP/work" && IAH_PLUGIN=1 HOME="$TMP" LINK_HARNESS_WINDOWS=0 "$ROOT/bin/link-harness" "$@" 2>&1); }
 rm -f "$TMP/.claude/settings.json"
-(cd "$TMP/work" && IAH_PLUGIN=1 HOME="$TMP" LINK_HARNESS_WINDOWS=0 "$ROOT/bin/link-harness" --quiet)
-cmds="$(jq -r '.hooks.PreToolUse[].hooks[].command' "$TMP/.claude/settings.json")"
-grep -q "^$IAH_STABLE_LINK/hooks/ro-guard/ro-guard.sh$" <<<"$cmds" || { echo "FAIL: plugin mode: ro-guard not registered through the stable link"; fail=1; }
-! grep -qF "$ROOT/" <<<"$cmds" || { echo "FAIL: plugin mode: a hook points at the plugin dir itself"; fail=1; }
+prun --quiet >/dev/null
+check '.permissions.deny | index("Bash(kubectl * delete *)")' "plugin mode: deny rules installed"
+check '.permissions.ask | index("Bash(git push --force*)")' "plugin mode: ask rules installed"
+check '(.hooks // {}) | has("PreToolUse") | not' "plugin mode: hooks added to a fresh settings.json"
+
+# 7. Plugin mode: stable-link guard entries removed (with backup), foreign ones kept with a message
+ROG="$SL/hooks/ro-guard/ro-guard.sh"; BDP="$SL/hooks/block-destructive-platform/block-destructive-platform.sh"
+FOREIGN="/home/x/other-harness/hooks/ro-guard/ro-guard.sh"
+cat > "$S" <<EOF
+{ "permissions": { "deny": ["Bash(kubectl delete *)"] },
+  "hooks": { "PreToolUse": [
+    { "matcher": "Bash", "hooks": [ { "type": "command", "command": "$ROG" }, { "type": "command", "command": "$BDP" } ] },
+    { "matcher": "Bash", "hooks": [ { "type": "command", "command": "$FOREIGN" }, { "type": "command", "command": "/home/x/other-tool/hooks/block-git-write.sh" } ] } ],
+    "SessionStart": [ { "hooks": [ { "type": "command", "command": "/home/x/start.sh" } ] } ] },
+  "model": "opus" }
+EOF
+cp "$S" "$TMP/settings.before"
+b0="$(backups)"
+out="$(prun --dry-run)"
+cmp -s "$S" "$TMP/settings.before" || { echo "FAIL: plugin mode --dry-run changed settings.json"; fail=1; }
+[ "$(backups)" = "$b0" ] || { echo "FAIL: plugin mode --dry-run made a backup"; fail=1; }
+grep -qF "would: remove hook $ROG from settings.json (the plugin registers it)" <<<"$out" || { echo "FAIL: dry-run does not list the ro-guard removal"; fail=1; }
+grep -qF "would: remove hook $BDP from settings.json (the plugin registers it)" <<<"$out" || { echo "FAIL: dry-run does not list the block-destructive removal"; fail=1; }
+sleep 1
+out="$(prun)"
+grep -qF "kept hook $FOREIGN in settings.json (not this harness; the guard will run twice: the plugin also registers it)" <<<"$out" || { echo "FAIL: no message for the foreign guard entry"; fail=1; }
+[ "$(backups)" = "$((b0 + 1))" ] || { echo "FAIL: removal made no backup"; fail=1; }
+check "[.hooks.PreToolUse[].hooks[].command] | index(\"$ROG\") == null and index(\"$BDP\") == null" "stable-link guard entries not removed"
+check "[.hooks.PreToolUse[].hooks[].command] | index(\"$FOREIGN\") != null" "foreign guard entry removed"
+check '[.hooks.PreToolUse[].hooks[].command] | index("/home/x/other-tool/hooks/block-git-write.sh") != null' "other hook removed"
+check '(.hooks.PreToolUse | length) == 1' "emptied PreToolUse group kept"
+check '.hooks.SessionStart | length == 1' "SessionStart hook lost"
+check '.model == "opus" and (.permissions.ask | index("Bash(git push --force*)"))' "other keys / ask rules lost"
+before="$(cat "$S")"; sleep 1; prun --quiet >/dev/null
+[ "$(cat "$S")" = "$before" ] || { echo "FAIL: plugin mode second run changed the file"; fail=1; }
+# only our entries: the whole PreToolUse key disappears when it becomes empty
+cat > "$S" <<EOF
+{ "hooks": { "PreToolUse": [ { "matcher": "Bash", "hooks": [ { "type": "command", "command": "$ROG" }, { "type": "command", "command": "$BDP" } ] } ] } }
+EOF
+prun --quiet >/dev/null
+check '(.hooks // {}) | has("PreToolUse") | not' "empty PreToolUse key left behind"
+
+# 8. Manual mode still adds the hooks
+rm -f "$S"
+(cd "$TMP/work" && IAH_PLUGIN=0 HOME="$TMP" LINK_HARNESS_WINDOWS=0 "$ROOT/bin/link-harness" --quiet >/dev/null 2>&1)
+check '[.hooks.PreToolUse[].hooks[].command] | length == 2' "manual mode: hooks not registered"
 
 if [ "$fail" = 0 ]; then echo "link-harness settings: all tests passed"; else echo "link-harness settings: tests FAILED"; exit 1; fi
