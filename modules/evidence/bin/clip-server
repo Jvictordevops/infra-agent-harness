@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# Clipboard + evidence server for bin/clip and bin/evidence (server/server.py in a container). Idempotent.
+# Usage: bin/clip-server up | keep-awake | status | share <ssh-host> | logs | down
+#   up          create TLS cert + token if missing, start the container (docker or podman)
+#   keep-awake  (WSL only; run it yourself, once) start WSL hidden at logon so the server is always there
+#   share       copy the client config (certificate, token, URL) to another machine over SSH
+# Settings: ~/.config/infra-agent-harness/evidence.conf (server_host is required; server_port, default 443).
+# CONTAINER_ENGINE=docker|podman forces the engine. On WSL, the Windows firewall must allow the port
+# (inbound TCP, Private profile, Windows + Hyper-V rules).
+set -euo pipefail
+
+SELF="$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")"
+# shellcheck source-path=SCRIPTDIR source=../lib/config.sh
+. "$(dirname "$SELF")/../lib/config.sh"
+DIR="$EV_MODULE_DIR/server"
+SRV="${CLIP_SERVER_CONF:-$HOME/.config/infra-agent-harness/clip-server}"   # server side: cert, key, token (owned by the container user)
+CLI="$(ev_client_dir)"                                                      # client side: server.crt, token, url
+DATA="${CLIP_SERVER_DATA:-$HOME/.local/share/infra-agent-harness/evidence-store}"   # evidence store (owned by the container user)
+IMG="python:3.12-alpine"
+die() { echo "clip-server: $*" >&2; exit 1; }
+say() { echo "clip-server: $*"; }
+
+HOST="$(ev_server_host)"; PORT="$(ev_server_port)"
+[[ "$PORT" =~ ^[0-9]+$ ]] || die "server_port '$PORT' is not a number"
+PUBLIC_URL="$(ev_url "${HOST:-?}" "$PORT")"
+LOCAL_URL="$(ev_url localhost "$PORT")"
+
+need_host() { [ -n "$HOST" ] || die "set server_host in $EV_CONF_FILE (the name clients use to reach this machine)"; }
+need_engine() {
+  ENGINE="${CONTAINER_ENGINE:-}"
+  if [ -z "$ENGINE" ]; then
+    for e in docker podman; do if command -v "$e" >/dev/null; then ENGINE="$e"; break; fi; done
+  fi
+  [ -n "$ENGINE" ] || die "neither docker nor podman found (or set CONTAINER_ENGINE)"
+  command -v "$ENGINE" >/dev/null || die "container engine '$ENGINE' not found"
+}
+compose() { CLIP_CONF="$SRV" CLIP_DATA="$DATA" CLIP_PUBLISH_PORT="$PORT" "$ENGINE" compose -f "$DIR/compose.yaml" -p clip "$@"; }
+health() { curl -s -m 5 --cacert "$CLI/server.crt" "$LOCAL_URL/health" 2>/dev/null; }
+owner_uid() { stat -c %u "$1" 2>/dev/null || stat -f %u "$1"; }
+
+# WSL only: the hidden-start script in the Windows Startup folder
+wsl_paths() {
+  ev_is_wsl || return 1
+  STARTUP="$(wslpath "$(cmd.exe /c 'echo %APPDATA%' 2>/dev/null | tr -d '\r')")/Microsoft/Windows/Start Menu/Programs/Startup"
+  VBS="$STARTUP/wsl-keepalive.vbs"
+}
+
+cmd_up() {
+  need_host; need_engine
+  mkdir -p "$SRV" "$CLI"; chmod 711 "$SRV"; chmod 700 "$CLI"   # 711: the container user may enter, not list
+  if [ ! -s "$SRV/server.key" ] || [ ! -s "$CLI/server.crt" ] || [ ! -s "$CLI/token" ]; then
+    local tmp san; tmp="$(mktemp -d)"
+    if [[ "$HOST" =~ ^[0-9.]+$ ]]; then san="IP:$HOST"; else san="DNS:$HOST"; fi
+    openssl rand -hex 32 > "$tmp/token"
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 -subj "/CN=$HOST" \
+      -addext "subjectAltName=$san,DNS:localhost,IP:127.0.0.1" \
+      -keyout "$tmp/server.key" -out "$tmp/server.crt" 2>/dev/null
+    ( umask 077; cp "$tmp/server.crt" "$tmp/token" "$CLI/" )
+    printf '%s\n' "$LOCAL_URL" > "$CLI/url"
+    # the container runs as uid 65534: hand it its copy (root inside a throwaway container does the chown)
+    "$ENGINE" run --rm -v "$SRV:/dst" -v "$tmp:/src:ro" "$IMG" sh -c 'cp /src/* /dst/ && chown 65534:65534 /dst/* && chmod 400 /dst/*'
+    rm -rf "$tmp"; say "new certificate ($HOST) and token created"
+  fi
+  if [ ! -d "$DATA" ] || [ "$(owner_uid "$DATA")" != 65534 ]; then
+    mkdir -p "$DATA"
+    "$ENGINE" run --rm -v "$DATA:/d" "$IMG" sh -c 'chown 65534:65534 /d && chmod 700 /d'
+    say "evidence store at $DATA"
+  fi
+  compose up -d --quiet-pull 2>&1 | grep -v -e '^ *Container' -e 'Running' || true
+  for _ in 1 2 3 4 5; do [ "$(health)" = ok ] && break; sleep 1; done
+  if [ "$(health)" = ok ]; then say "up: $PUBLIC_URL (network) and $LOCAL_URL (this machine)"
+  else die "not answering on $LOCAL_URL"; fi
+  if wsl_paths; then
+    [ -f "$VBS" ] || say "WSL stops when idle and the server with it: run 'bin/clip-server keep-awake' once"
+    say "WSL: the Windows firewall must allow inbound TCP $PORT (Private profile, Windows + Hyper-V rules)"
+  fi
+}
+
+cmd_keep_awake() { # a hidden 'sleep infinity' at logon keeps WSL (and the container engine) running
+  wsl_paths || die "keep-awake only applies to WSL (WSL not detected)"
+  [ -n "${WSL_DISTRO_NAME:-}" ] || die "WSL_DISTRO_NAME is not set"
+  printf 'Set s = CreateObject("WScript.Shell")\r\ns.Run "wsl.exe -d %s --exec sleep infinity", 0, False\r\n' "$WSL_DISTRO_NAME" > "$VBS"
+  say "WSL will start hidden at logon ($(wslpath -w "$VBS")); remove that file to undo"
+  pgrep -f '^sleep infinity$' >/dev/null || { cmd.exe /c start "" wscript.exe "$(wslpath -w "$VBS")" >/dev/null 2>&1; say "started now"; }
+}
+
+cmd_share() {
+  local host="${1:-}"; [ -n "$host" ] || die "usage: bin/clip-server share <ssh-host>"
+  need_host
+  [ -s "$CLI/token" ] || die "run bin/clip-server up first"
+  ssh "$host" 'mkdir -p ~/.config/infra-agent-harness/clip && chmod 700 ~/.config/infra-agent-harness/clip'
+  ssh "$host" 'umask 077; cat > ~/.config/infra-agent-harness/clip/server.crt' < "$CLI/server.crt"
+  ssh "$host" 'umask 077; cat > ~/.config/infra-agent-harness/clip/token' < "$CLI/token"
+  printf '%s\n' "$PUBLIC_URL" | ssh "$host" 'cat > ~/.config/infra-agent-harness/clip/url'
+  say "client config copied to $host (server $PUBLIC_URL)"
+}
+
+cmd_status() {
+  need_engine
+  echo "container:  $("$ENGINE" ps -a --filter name=clip-server --format '{{.Status}}' | head -1)"
+  echo "health:     $(health || echo 'no answer')"
+  if wsl_paths; then
+    echo "keep-awake: $([ -f "$VBS" ] && echo 'at logon' || echo 'NOT set') / $(pgrep -f '^sleep infinity$' >/dev/null && echo running || echo 'not running')"
+  fi
+  echo "server:     $PUBLIC_URL"
+}
+
+case "${1:-}" in
+  up) cmd_up ;;
+  keep-awake) cmd_keep_awake ;;
+  share) shift; cmd_share "$@" ;;
+  status) cmd_status ;;
+  logs) need_engine; "$ENGINE" logs --tail 30 clip-server ;;
+  down) need_engine; compose down ;;
+  *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+esac

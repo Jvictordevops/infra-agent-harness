@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Clipboard between machines.
+#   default:  the clip-server of the evidence module (local network, TLS + token, memory only)
+#   --remote: a secret named "clipboard" in the configured secrets backend (e.g. an end-to-end encrypted
+#             vault over HTTPS: works away from home / behind a VPN)
+# Usage: bin/clip [--remote] push | pull | status | lock      (also as cpush / cpull, linked by bin/link-harness)
+# Client config for the server: ~/.config/infra-agent-harness/clip/{url,server.crt,token} (clip-server up | share).
+# Local clipboard tool: pbcopy/pbpaste (macOS), powershell (WSL), wl-copy/wl-paste or xclip (Linux).
+# Never prints the clipboard content, only its size.
+# 'cond && x || die' is intended: die exits.
+# shellcheck disable=SC2015
+set -euo pipefail
+
+SELF="$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")"
+# shellcheck source-path=SCRIPTDIR source=../lib/config.sh
+. "$(dirname "$SELF")/../lib/config.sh"
+die() { echo "clip: $*" >&2; exit 1; }
+case "$(basename "$0")" in cpush) set -- push "$@" ;; cpull) set -- pull "$@" ;; esac
+REMOTE=0; if [ "${1:-}" = "--remote" ]; then REMOTE=1; shift; fi
+for a in "$@"; do if [ "$a" = "--remote" ]; then REMOTE=1; fi; done
+NAME=clipboard   # secret name in the backend
+
+# CLIP_COPY_CMD / CLIP_PASTE_CMD: executables replacing the local clipboard tool (used by the tests)
+if [ -n "${CLIP_PASTE_CMD:-}" ] && [ -n "${CLIP_COPY_CMD:-}" ]; then
+  get_clip() { "$CLIP_PASTE_CMD"; }
+  set_clip() { "$CLIP_COPY_CMD"; }
+elif [ "$(uname)" = "Darwin" ]; then
+  get_clip() { pbpaste; }
+  set_clip() { pbcopy; }
+elif ev_is_wsl; then
+  get_clip() { powershell.exe -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Clipboard -Raw" | sed 's/\r$//'; }
+  set_clip() { powershell.exe -NoProfile -Command "[Console]::InputEncoding=[Text.Encoding]::UTF8; Set-Clipboard -Value ([Console]::In.ReadToEnd())"; }
+elif [ -n "${WAYLAND_DISPLAY:-}" ] && command -v wl-paste >/dev/null; then
+  get_clip() { wl-paste --no-newline; }
+  set_clip() { wl-copy; }
+elif command -v xclip >/dev/null; then
+  get_clip() { xclip -o -selection clipboard; }
+  set_clip() { xclip -selection clipboard; }
+else
+  get_clip() { die "no clipboard tool found (install wl-clipboard or xclip)"; }
+  set_clip() { die "no clipboard tool found (install wl-clipboard or xclip)"; }
+fi
+# Tools installed with mise are not in PATH outside an interactive shell
+if [ -d "$HOME/.local/share/mise/shims" ]; then PATH="$HOME/.local/share/mise/shims:$PATH"; fi
+
+# ---------------------------------------------------------------- LAN server (default)
+SRV_DIR="$(ev_client_dir)"
+srv() { # $1 method, rest: curl args
+  local m="$1"; shift
+  [ -s "$SRV_DIR/url" ] && [ -s "$SRV_DIR/token" ] && [ -s "$SRV_DIR/server.crt" ] \
+    || die "no server config in $SRV_DIR (server host: clip-server up; other machines: clip-server share <ssh-host> from the server host)"
+  curl -sS -m 8 --fail-with-body --cacert "$SRV_DIR/server.crt" -X "$m" \
+    -H @<(printf 'X-Clip-Token: %s\n' "$(cat "$SRV_DIR/token")") "$@" "$(cat "$SRV_DIR/url")/clip" \
+    || die "server not reachable at $(cat "$SRV_DIR/url") (other network or a VPN blocking the LAN? use: clip --remote ...)"
+}
+srv_push() {
+  local text; text="$(get_clip)"; [ -n "$text" ] || die "your clipboard is empty"
+  printf '%s' "$text" | srv PUT --data-binary @- >/dev/null
+  echo "clip: sent ${#text} characters"
+}
+srv_pull() {
+  local text; text="$(srv GET)"; [ -n "$text" ] || die "nothing to paste (nothing was sent)"
+  printf '%s' "$text" | set_clip
+  echo "clip: ${#text} characters in your clipboard"
+}
+srv_status() {
+  echo "server:  $(cat "$SRV_DIR/url" 2>/dev/null || echo 'not configured')"
+  echo "health:  $(curl -s -m 5 --cacert "$SRV_DIR/server.crt" "$(cat "$SRV_DIR/url" 2>/dev/null)/health" 2>/dev/null || echo 'no answer')"
+}
+
+# ---------------------------------------------------------------- secrets backend (--remote)
+backend() { local be; be="$(ev_backend_path)" || die "cannot use the secrets backend"; "$be" "$@"; }
+remote_push() {
+  local text; text="$(get_clip)"; [ -n "$text" ] || die "your clipboard is empty"
+  printf '%s' "$text" | backend put "$NAME" || die "could not store the clipboard in the backend"
+  echo "clip: sent ${#text} characters (remote)"
+}
+remote_pull() {
+  local text; text="$(backend get "$NAME")" || die "nothing sent yet (no '$NAME' in the backend)"
+  [ -n "$text" ] || die "nothing to paste (the secret is empty)"
+  printf '%s' "$text" | set_clip
+  printf '' | backend put "$NAME" || echo "clip: warning: could not empty the remote copy" >&2   # one-shot
+  echo "clip: ${#text} characters in your clipboard (remote)"
+}
+remote_lock() { backend lock || true; }
+
+case "${1:-}" in
+  push) if [ "$REMOTE" = 1 ]; then remote_push; else srv_push; fi ;;
+  pull) if [ "$REMOTE" = 1 ]; then remote_pull; else srv_pull; fi ;;
+  lock) remote_lock ;;
+  status) srv_status; backend status || true ;;
+  *) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+esac

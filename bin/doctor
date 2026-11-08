@@ -2,6 +2,8 @@
 # Check (and fix what is safe) the setup of this machine for the harness. Idempotent.
 # Prints one summary to paste back. Never prints keys or tokens.
 # Usage: bin/doctor
+# Optional modules active for the repository (.harness.conf "modules=a,b", IAH_MODULES overrides) add
+# their checks from modules/<name>/doctor.sh.
 # Repository with your works: $IAH_REPO, else the git repository of the current directory (optional).
 # 'cond && ok … || warn …' is safe: ok/warn/fail only append to an array and never fail.
 # shellcheck disable=SC2015
@@ -45,7 +47,7 @@ done
 command -v gh >/dev/null && ok "gh present" || warn "gh missing (only needed for GitHub work)"
 
 # 4. Harness installed for the agents
-"$HARNESS/bin/link-harness" --quiet && ok "link-harness run"
+IAH_REPO="$REPO" "$HARNESS/bin/link-harness" --quiet && ok "link-harness run"
 cs="$HOME/.claude/settings.json"
 for h in ro-guard.sh block-destructive-platform.sh; do
   if jq -e --arg h "$h" '[.hooks.PreToolUse[]?.hooks[]?.command | select(endswith($h))] | length > 0' "$cs" >/dev/null 2>&1; then
@@ -80,6 +82,18 @@ files=""; [ "${#cfg[@]}" -gt 0 ] && files="$(grep -rIlE 'ghp_[A-Za-z0-9]{36}' "$
 vars="$(env | grep -oE '^(GITHUB|GH|COPILOT)_[A-Z_]*TOKEN' | tr '\n' ' ')"
 [ -z "$vars" ] && ok "no GitHub token in environment variables" || warn "token in environment variables: $vars"
 helper="$(git config --get-all credential.helper | tr '\n' ' ')"; ok "git credential.helper: ${helper:-none}"
+
+# 6. Optional modules (sourced: they use ok/warn/fail, MACHINE and HARNESS; MODULE_DIR is theirs)
+for m in $(conf_modules "$REPO"); do
+  if [[ ! "$m" =~ ^[a-z0-9-]+$ ]] || [ ! -d "$HARNESS/modules/$m" ]; then
+    warn "module '$m' is listed in modules= but modules/$m/ does not exist"; continue
+  fi
+  if [ -f "$HARNESS/modules/$m/doctor.sh" ]; then
+    MODULE_DIR="$HARNESS/modules/$m"
+    # shellcheck source=/dev/null
+    . "$MODULE_DIR/doctor.sh"
+  fi
+done
 
 echo "=== bin/doctor · machine: $MACHINE · $(date '+%Y-%m-%d %H:%M')"
 printf '%s\n' "${R[@]}"

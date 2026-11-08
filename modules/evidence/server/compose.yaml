@@ -1,0 +1,21 @@
+# Clipboard and evidence server for bin/clip and bin/evidence. Managed by bin/clip-server.
+services:
+  clip:
+    image: python:3.12-alpine
+    container_name: clip-server
+    command: ["python", "-u", "/app/server.py"]
+    ports: ["${CLIP_PUBLISH_PORT:-443}:8443"]   # LAN only: allow it in the host firewall for your private network
+    volumes:
+      - ./server.py:/app/server.py:ro
+      - ${CLIP_CONF}:/etc/clip:ro             # server.crt, server.key, token
+      - ${CLIP_DATA}:/data                    # evidence store (use an encrypted disk)
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import ssl,urllib.request as u; u.urlopen('https://127.0.0.1:8443/health', context=ssl._create_unverified_context(), timeout=3)"]
+      interval: 60s
+      timeout: 5s

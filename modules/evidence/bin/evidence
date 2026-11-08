@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+# Evidence shared between machines through the evidence store (clip-server of this module: local network,
+# TLS + token). Nothing goes to GitHub or the internet.
+# One package per evidence folder: evidence/<date>.<slug>/ -> <date>.<slug>.tar.zst (folders are immutable).
+#
+# Usage: bin/evidence <command> <work-dir>
+#   init     mark the work as sharing evidence (README frontmatter: evidence_store: <server_host>)
+#   sync     upload local folders the store lacks, download the ones missing here.
+#            Store not reachable (other network, VPN blocking the LAN, host asleep) -> pending, not an error.
+#   archive  (on close) sync, encrypted archive in the archive dir, then delete from store and locally
+#   status   local folders, store packages and what is pending
+#   restore  <archive.enc> <dir>   decrypt and unpack an archive
+# Key (encrypts archives): key-new | key-import (base64 from stdin) | key-backup (put it in the secrets
+#   backend) | key-restore (get it back from there). Settings: ~/.config/infra-agent-harness/evidence.conf.
+# Never prints the key.
+# 'cond && x || die' is intended: die exits.
+# shellcheck disable=SC2015
+set -euo pipefail
+
+SELF="$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")"
+# shellcheck source-path=SCRIPTDIR source=../lib/config.sh
+. "$(dirname "$SELF")/../lib/config.sh"
+KEY="$(ev_key_path)"
+ARCHIVE_DIR="$(ev_archive_dir)"
+CLI="$(ev_client_dir)"   # url, server.crt, token (bin/clip-server up | share)
+MAX=$((2 * 1024 * 1024 * 1024))
+
+die() { echo "evidence: $*" >&2; exit 1; }
+usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+sha() { ev_sha "$1"; }
+fsize() { stat -c %s "$1" 2>/dev/null || stat -f %z "$1"; }
+
+fm_get() { # $1 README, $2 key -> value (frontmatter only)
+  awk -v k="$2" 'NR==1 && $0!="---"{exit} NR>1 && $0=="---"{exit}
+    NR>1 { i=index($0,":"); if (i && substr($0,1,i-1)==k) { v=substr($0,i+1); sub(/^[ \t]+/,"",v); print v; exit } }' "$1"
+}
+fm_set() { # $1 README, $2 key, $3 value -> replace or insert before the closing ---
+  local tmp; tmp="$(mktemp)"
+  awk -v k="$2" -v v="$3" 'BEGIN{done=0}
+    NR==1 { print; next }
+    !end && $0=="---" { if (!done) print k ": " v; end=1; print; next }
+    !end { i=index($0,":"); if (i && substr($0,1,i-1)==k) { print k ": " v; done=1; next } }
+    { print }' "$1" > "$tmp" && cat "$tmp" > "$1" && rm -f "$tmp"
+}
+
+need_key() { [ -s "$KEY" ] || die "no key at $KEY (bin/evidence key-restore, key-import or key-new)"; }
+# Archive cipher: AES-256 with a password derived from the whole key file (sha256), passed on a file descriptor.
+# Note: CBC has no integrity protection; a tampered archive is not detected by the cipher (see the module README).
+enc() { openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt "$@" -pass fd:3 3< <(sha "$KEY"); }
+
+work_vars() { # $1 work dir -> WORK README ID COMPANY EV STORE ARCHIVED SKEY
+  [ -n "${1:-}" ] || usage
+  WORK="$(cd "$1" 2>/dev/null && pwd)" || die "not a directory: $1"
+  README="$WORK/README.md"; [ -f "$README" ] || die "no README.md in $WORK"
+  ID="$(fm_get "$README" id)"; COMPANY="$(fm_get "$README" company)"
+  [ -n "$ID" ] && [ -n "$COMPANY" ] || die "README frontmatter needs id: and company:"
+  EV="$WORK/evidence"; STORE="$(fm_get "$README" evidence_store)"; ARCHIVED="$(fm_get "$README" evidence_archive)"
+  SKEY="$COMPANY.$ID"
+}
+
+url() { cat "$CLI/url" 2>/dev/null; }
+configured() { [ -s "$CLI/url" ] && [ -s "$CLI/token" ] && [ -s "$CLI/server.crt" ]; }
+reachable() { configured && curl -s -m 8 --cacert "$CLI/server.crt" "$(url)/health" 2>/dev/null | grep -q ok; }
+api() { # $1 method, $2 path, rest: curl args
+  local m="$1" p="$2"; shift 2
+  curl -sS -m "${API_TIMEOUT:-60}" --fail --cacert "$CLI/server.crt" -X "$m" \
+    -H @<(printf 'X-Clip-Token: %s\n' "$(cat "$CLI/token")") "$@" "$(url)$p"
+}
+local_folders() { [ -d "$EV" ] && find "$EV" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -exec basename {} \; | sort; }
+store_list() { api GET "/ev/$SKEY/" | jq -r '.[] | "\(.name) \(.sha256)"'; }
+
+do_sync() { # assumes work_vars; prints a one-line summary
+  local remote f pkg tmp up=0 down=0 name sum
+  remote="$(store_list)"
+  for f in $(local_folders); do
+    pkg="$f.tar.zst"; grep -q "^$pkg " <<<"$remote" && continue
+    tmp="$(mktemp)"; tar -C "$EV" -cf - "$f" | zstd -q -T0 -c > "$tmp"
+    if [ "$(fsize "$tmp")" -gt "$MAX" ]; then rm -f "$tmp"; echo "evidence: $f is over 2 GB compressed: kept local only (say so in the record)" >&2; continue; fi
+    API_TIMEOUT=1800 api PUT "/ev/$SKEY/$pkg" -T "$tmp" >/dev/null; rm -f "$tmp"; up=$((up + 1))
+  done
+  while read -r name sum; do
+    [ -n "$name" ] || continue
+    f="${name%.tar.zst}"; [ -d "$EV/$f" ] && continue
+    tmp="$(mktemp)"; API_TIMEOUT=1800 api GET "/ev/$SKEY/$name" -o "$tmp"
+    [ "$(sha "$tmp")" = "$sum" ] || { rm -f "$tmp"; die "checksum mismatch for $name"; }
+    mkdir -p "$EV"; zstd -dc "$tmp" | tar -C "$EV" -xf -; rm -f "$tmp"; down=$((down + 1))
+  done <<<"$remote"
+  [ -z "$(find "$EV" -mindepth 1 -maxdepth 1 -type f ! -name '.*' 2>/dev/null)" ] \
+    || echo "evidence: loose files in evidence/ are not shared: put them in evidence/<date>.<slug>/" >&2
+  echo "Evidence of $ID in sync with the store: $up uploaded, $down downloaded."
+}
+
+cmd_init() {
+  local host
+  work_vars "$1"
+  [ -z "$STORE" ] || { echo "Already shared (evidence_store: $STORE)."; return 0; }
+  host="$(ev_server_host)"; [ -n "$host" ] || die "set server_host in $EV_CONF_FILE first"
+  mkdir -p "$EV"; fm_set "$README" evidence_store "$host"
+  echo "evidence_store: $host set in $ID/README.md (commit it). Evidence folders go in evidence/<date>.<slug>/."
+}
+
+cmd_sync() {
+  work_vars "$1"
+  if [ -n "$ARCHIVED" ]; then   # closed: the local copy (if any) is kept as is; nothing to sync
+    if [ -n "$(local_folders)" ]; then echo "Work $ID is archived ($ARCHIVED): local copy kept in $EV."
+    else echo "Work $ID is archived ($ARCHIVED): no local copy here (bin/evidence restore)."; fi
+    return 0
+  fi
+  [ -n "$STORE" ] || { echo "No shared evidence for $ID (local only)."; return 0; }
+  mkdir -p "$EV"
+  if ! reachable; then
+    echo "evidence: store not reachable ($(url || echo 'not configured')): $(local_folders | wc -l | tr -d ' ') local folder(s) pending; run sync again later."
+    return 0
+  fi
+  do_sync
+}
+
+cmd_archive() {
+  work_vars "$1"; need_key
+  [ -n "$STORE" ] || die "$ID does not share evidence (no evidence_store:)"
+  [ -z "$ARCHIVED" ] || die "already archived: $ARCHIVED"
+  reachable || die "store not reachable: archiving needs it (nothing changed)"
+  do_sync
+  mkdir -p "$ARCHIVE_DIR"
+  local out n_local n_arch; out="$ARCHIVE_DIR/$SKEY.$(date +%Y-%m-%d).tar.zst.enc"
+  tar -C "$WORK" -cf - evidence | zstd -q -19 -T0 -c | enc -out "$out"
+  n_local="$(find "$EV" -type f | wc -l | tr -d ' ')"
+  n_arch="$(enc -d -in "$out" | zstd -dc | tar -tf - | grep -vc '/$' || true)"
+  [ "$n_local" = "$n_arch" ] || die "archive check failed ($n_arch files vs $n_local): store NOT deleted, archive at $out"
+  api DELETE "/ev/$SKEY/" >/dev/null
+  rm -rf "${EV:?}"/*
+  fm_set "$README" evidence_archive "$(basename "$out")"
+  echo "Archived $n_arch file(s), encrypted: $out"
+  echo "Deleted from the store and locally; evidence_archive: set in $ID/README.md (commit it)."
+  echo "Restore: bin/evidence restore $out <dir>"
+}
+
+cmd_restore() {
+  [ -f "${1:-}" ] && [ -n "${2:-}" ] || usage
+  need_key; mkdir -p "$2"
+  enc -d -in "$1" | zstd -dc | tar -C "$2" -xf -
+  echo "Restored into $2"
+}
+
+cmd_status() {
+  work_vars "$1"
+  echo "work:     $ID"
+  echo "shared:   ${STORE:-no (local only)}${ARCHIVED:+ · archived: $ARCHIVED}"
+  echo "local:    $(local_folders | tr '\n' ' ')"
+  if reachable; then echo "store:    $(store_list | cut -d' ' -f1 | tr '\n' ' ')"
+  else echo "store:    not reachable ($(url || echo 'not configured'))"; fi
+  echo "key:      $([ -s "$KEY" ] && echo present || echo MISSING)"
+}
+
+cmd_key_new() {
+  [ -e "$KEY" ] && die "key already exists at $KEY (never overwrite it)"
+  mkdir -p "$(dirname "$KEY")"; ( umask 077; openssl rand 64 > "$KEY" )
+  echo "Key created at $KEY. Back it up with: bin/evidence key-backup (never print it)."
+}
+
+# Secrets backend (backends/<secrets_backend>.sh): the key travels as one line of base64 under the name evidence-key
+cmd_key_backup() {
+  local be mine existing
+  need_key; be="$(ev_backend_path)" || die "cannot use the secrets backend"
+  mine="$(base64 < "$KEY" | tr -d '\n')"
+  if existing="$("$be" get evidence-key 2>/dev/null)"; then
+    [ "$existing" = "$mine" ] && { echo "Key already backed up (evidence-key)."; return 0; }
+    die "a different key is already stored as evidence-key: remove it from the backend first"
+  fi
+  printf '%s' "$mine" | "$be" put evidence-key
+  echo "Key backed up as evidence-key ($(basename "$be" .sh) backend)."
+}
+
+cmd_key_restore() {
+  local be b64 want
+  [ -e "$KEY" ] && die "key already exists at $KEY"
+  be="$(ev_backend_path)" || die "cannot use the secrets backend"
+  b64="$("$be" get evidence-key)" || die "no evidence-key in the $(basename "$be" .sh) backend (on the machine that has the key: bin/evidence key-backup)"
+  mkdir -p "$(dirname "$KEY")"
+  ( umask 077; printf '%s' "$b64" | base64 -d > "$KEY" ) 2>/dev/null || { rm -f "$KEY"; die "invalid base64 in the backend"; }
+  unset b64
+  want="$(ev_conf_get key_fingerprint)"
+  if [ -n "$want" ] && [ "$(ev_sha12 "$KEY")" != "$want" ]; then rm -f "$KEY"; die "restored key does not match key_fingerprint: not kept"; fi
+  echo "Key restored at $KEY ($(fsize "$KEY") bytes${want:+, fingerprint matches})."
+}
+
+cmd_key_import() {
+  [ -e "$KEY" ] && die "key already exists at $KEY"
+  mkdir -p "$(dirname "$KEY")"
+  ( umask 077; base64 -d > "$KEY" ) || { rm -f "$KEY"; die "invalid base64"; }
+  echo "Key imported at $KEY ($(fsize "$KEY") bytes)."
+}
+
+[ $# -ge 1 ] || usage
+cmd="$1"; shift
+case "$cmd" in
+  init) cmd_init "$@" ;;
+  sync) cmd_sync "$@" ;;
+  archive) cmd_archive "$@" ;;
+  restore) cmd_restore "$@" ;;
+  status) cmd_status "$@" ;;
+  key-new) cmd_key_new ;;
+  key-import) cmd_key_import ;;
+  key-backup) cmd_key_backup ;;
+  key-restore) cmd_key_restore ;;
+  -h|--help|help) usage ;;
+  *) usage ;;
+esac

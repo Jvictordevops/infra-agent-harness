@@ -3,6 +3,8 @@
 #   - skills/<name>            -> ~/.claude/skills/<name> and ~/.copilot/skills (symlinks)
 #   - GLOBAL.md (if present)   -> ~/.claude/CLAUDE.md and ~/.copilot/copilot-instructions.md
 #   - hooks/settings.base.json -> merged into ~/.claude/settings.json (guards + deny/ask rules)
+#   - optional modules active for the repository (.harness.conf "modules=a,b", IAH_MODULES overrides):
+#     modules/<name>/link.sh is sourced and may use say/link above
 #   - WSL only: COPIES of skills and GLOBAL.md into the Windows profile (%USERPROFILE%\.claude),
 #     because the Windows apps cannot follow WSL symlinks. Re-run after a pull (bin/hooks/post-merge
 #     and post-rewrite do it). LINK_HARNESS_WINDOWS=0 skips this part.
@@ -10,6 +12,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/conf.sh
+. "$ROOT/bin/lib/conf.sh"
 QUIET=0; [ "${1:-}" = "--quiet" ] && QUIET=1
 say() { [ "$QUIET" -eq 1 ] || echo "link-harness: $*"; }
 
@@ -65,6 +69,18 @@ merge_settings() {
   fi
 }
 merge_settings
+
+# Optional modules: sourced, so they can use say/link and the variables above (MODULE_DIR is theirs)
+for m in $(conf_modules "${IAH_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"); do
+  if [[ ! "$m" =~ ^[a-z0-9-]+$ ]] || [ ! -d "$ROOT/modules/$m" ]; then
+    echo "link-harness: warning: unknown module '$m' (no modules/$m/)" >&2; continue
+  fi
+  if [ -f "$ROOT/modules/$m/link.sh" ]; then
+    MODULE_DIR="$ROOT/modules/$m"
+    # shellcheck source=/dev/null
+    . "$MODULE_DIR/link.sh"
+  fi
+done
 
 # 2. Windows profile of the Claude app (only from WSL)
 if [ "${LINK_HARNESS_WINDOWS:-1}" = 1 ] && grep -qi microsoft /proc/version 2>/dev/null; then
