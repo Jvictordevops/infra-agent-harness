@@ -1,0 +1,10 @@
+# Keeps the SHA-pinned actions in .github/workflows current (one weekly pull request).
+# gitleaks is pinned in .github/scripts/install-gitleaks and is bumped by hand.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci

@@ -66,6 +66,7 @@ flowchart LR
 - On commit, `prepare-commit-msg` adds the task trailer (`Task:`, or the word of your language) for tasks the staged files start, close or document. It never blocks.
 - `commit-msg` blocks AI attribution: tool `Co-authored-by` trailers, "Generated with" lines, session trailers, model names, an agent as author.
 - `pre-commit` (the one in `bin/hooks/`) runs `gitleaks` on the staged changes (the commit is blocked if `gitleaks` is not installed), then `bin/check-work --staged`. It does **not** run `denylist-scan`; that is the contributor hook of this repo (`.githooks/pre-commit`).
+- **CI of this repo** (`.github/workflows/ci.yml`, read-only token, actions pinned by SHA): `tests/lint`, `tests/run`, `gitleaks` on the whole history, and `denylist-scan --quiet` plus `--history` with the maintainer's denylist from the `IAH_DENYLIST` secret. Logs show file, line and rule, never the matching text. Pull requests from forks and Dependabot get no secrets, so they are checked with the generic patterns only.
 
 Anatomy of a work:
 
@@ -225,5 +226,5 @@ For each setting the first of these wins:
 - **Archives have no integrity protection** (AES-256-CBC). Confidentiality depends on the key file; losing it loses the archives.
 - **The LAN token is shared.** Anyone on your network with the token can read and write the evidence store and clipboard. The store is not encrypted at rest by the module.
 - **Partly tested.** Podman, macOS as an evidence host, the Bitwarden backend beyond syntax, and SSH setup on Linux are marked untested in the module READMEs.
-- **Commit hooks can be skipped** with `git commit --no-verify`, and `pre-commit` needs `gitleaks` installed.
+- **Commit hooks can be skipped** with `git commit --no-verify`, and `pre-commit` needs `gitleaks` installed. In this repo the CI catches what a skipped hook lets through, but only after the push.
 - A full threat model is planned, not written.

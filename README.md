@@ -46,7 +46,7 @@ Full detail and more diagrams: [docs/architecture.md](docs/architecture.md).
 - **Method** (`docs/method.md`, `docs/method-full.md`): `bin/new-work`, `bin/check-work`, `templates/`, English and Spanish vocabulary in `locale/`.
 - **Skills** (`skills/`): `new-project`, `load-project`, `close-task`, `init-context`, `troubleshoot`, `digest`, `parallel-audit`, `parallel-review`, `role`.
 - **Modules** (`modules/`): `evidence` (shared evidence store, encrypted archives), `two-machine` (architect and executor on two machines).
-- **Tools**: `bin/doctor` (checks a machine, read-only), `bin/denylist-scan` (used by this repo's own contributor hook).
+- **Tools**: `bin/doctor` (checks a machine, read-only), `bin/denylist-scan` (used by this repo's own contributor hook and CI; `--history` checks every commit, `--quiet` never prints the matching text).
 
 ## Quick start
 
@@ -121,7 +121,7 @@ git config core.hooksPath ~/infra-agent-harness/bin/hooks
 
 ## Status and roadmap
 
-Version 0.1 is in progress and has not been released. What is described above exists in this repo, with tests under `tests/` and `modules/*/tests/`. Some parts are only lightly tested; the module READMEs say which.
+Version 0.1 is in progress and has not been released. What is described above exists in this repo, with tests under `tests/` and `modules/*/tests/`: `tests/run` runs them all and `tests/lint` runs shellcheck. CI (`.github/workflows/ci.yml`) runs both, plus gitleaks and the denylist scan of the tree and the whole history, on every push to `main`, every pull request and every release tag. Some parts are only lightly tested; the module READMEs say which.
 
 Planned, not implemented (do not rely on any of these):
 
