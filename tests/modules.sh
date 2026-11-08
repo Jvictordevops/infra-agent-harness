@@ -28,6 +28,13 @@ rm "$R/.harness.conf"
 
 # --- link-harness ----------------------------------------------------------------------
 run_link() { (cd "$TMP" && "$ROOT/bin/link-harness" "$@" 2>&1); }
+
+# GLOBAL.md comes from the work repo, not from the harness
+echo "# global of the work repo" > "$R/GLOBAL.md"
+(cd "$R" && "$ROOT/bin/link-harness" >/dev/null 2>&1)
+check "link-harness: CLAUDE.md -> work repo GLOBAL.md"   '[ "$(readlink "$HOME/.claude/CLAUDE.md")" = "$R/GLOBAL.md" ]'
+check "link-harness: copilot -> work repo GLOBAL.md"     '[ "$(readlink "$HOME/.copilot/copilot-instructions.md")" = "$R/GLOBAL.md" ]'
+rm -f "$R/GLOBAL.md" "$HOME/.claude/CLAUDE.md" "$HOME/.copilot/copilot-instructions.md"
 out="$(run_link)"
 check "link-harness without modules: no cpush"          '[ ! -e "$HOME/.local/bin/cpush" ]'
 check "link-harness without modules: no module output"  '! grep -qi "evidence\|cpush\|module" <<<"$out"'
