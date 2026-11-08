@@ -14,6 +14,7 @@
 #   kubectl <verb> … --context C                  get, describe, logs, top, events, api-resources, auth can-i…
 #   helm <list|status|history|get metadata> … --kube-context C
 #   git -C <dir> <log|show|diff|grep|status|branch…> …
+#   gh <repo|pr|issue|run|workflow|release|label|search> <list|view|…> … · gh api <endpoint> (GET only)
 #   cat|head|tail|ls|find|grep|wc|stat <paths under RO_ROOTS>
 # Limits (optional, comma lists): RO_PROFILES, RO_CONTEXTS · RO_ROOTS (default $HOME/code).
 # Never: secrets (Secrets, get-secret-value, --with-decryption, tokens), credentials, sensitive files.
@@ -23,7 +24,7 @@ set -f
 
 MODE="${RO_MODE_FILE:-$HOME/.config/infra-agent-harness/ro-mode}"
 
-usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 deny() { echo "ro: denied: $*" >&2; exit 3; }
 
 in_list() { # $1 value, $2 comma list (empty = any)
@@ -152,6 +153,47 @@ check_git() {
   done
 }
 
+check_gh() { # gh <group> <subcommand> …: GitHub reads only; never secrets, tokens or writes
+  local group="${1-}" sub="${2-}" a method="" fields=0 endpoint=""
+  case "$group" in
+    repo|release|workflow) case "$sub" in list|view) ;; *) deny "gh: $group $sub not allowed (list, view)" ;; esac ;;
+    pr) case "$sub" in list|view|diff|checks|status) ;; *) deny "gh: pr $sub not allowed (list, view, diff, checks, status)" ;; esac ;;
+    issue) case "$sub" in list|view|status) ;; *) deny "gh: issue $sub not allowed (list, view, status)" ;; esac ;;
+    run) case "$sub" in list|view) ;; *) deny "gh: run $sub not allowed (list, view)" ;; esac ;;
+    label) [ "$sub" = list ] || deny "gh: label $sub not allowed (list)" ;;
+    search) case "$sub" in repos|prs|issues|code|commits) ;; *) deny "gh: search $sub not allowed" ;; esac ;;
+    auth) [ "$sub" = status ] || deny "gh: only 'auth status'" ;;
+    api) ;;
+    *) deny "gh: '$group' not allowed (repo, pr, issue, run, workflow, release, label, search, auth status, api GET)" ;;
+  esac
+  shift
+  for a in "$@"; do
+    case "$a" in
+      -w|--web|--show-token|-t|--input|--input=*) deny "gh: $a not allowed" ;;
+    esac
+  done
+  [ "$group" = api ] || return 0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -X|--method) method="${2-}"; shift ;;
+      -X*) method="${1#-X}" ;;
+      --method=*) method="${1#*=}" ;;
+      -f|-F|--field|--raw-field) fields=1; shift ;;
+      -f*|-F*|--field=*|--raw-field=*) fields=1 ;;
+      -H|--header) case "$(lower "${2-}")" in *method*|*override*) deny "gh api: header $2 not allowed" ;; esac; shift ;;
+      -q|--jq|--template|--hostname|--cache|-p|--preview) shift ;;
+      -*) ;;
+      *) [ -n "$endpoint" ] || endpoint="$1" ;;
+    esac
+    shift
+  done
+  [ -n "$endpoint" ] || deny "gh: use 'gh api <endpoint> …'"
+  case "$(lower "$endpoint")" in graphql|/graphql|*secrets*|*/variables*|*token*|*/keys*) deny "gh api: $endpoint not allowed" ;; esac
+  if [ -n "$method" ] && [ "$(lower "$method")" != get ]; then deny "gh api: only GET"; fi
+  # -f/-F turn the request into a POST unless the method is set to GET
+  if [ "$fields" = 1 ] && [ -z "$method" ]; then deny "gh api: -f/-F need '-X GET' (they imply POST)"; fi
+}
+
 check_files() { # $1 tool, rest args
   local tool="$1" a value="" pattern_done=0 opts=1 paths=0
   shift
@@ -190,8 +232,9 @@ validate() { # $@ = tool args…
     kubectl) check_kubectl "$@" ;;
     helm) check_helm "$@" ;;
     git) check_git "$@" ;;
+    gh) check_gh "$@" ;;
     cat|head|tail|ls|find|grep|wc|stat) check_files "$tool" "$@" ;;
-    *) deny "tool '$tool' not allowed (aws, kubectl, helm, git, cat, head, tail, ls, find, grep, wc, stat)" ;;
+    *) deny "tool '$tool' not allowed (aws, kubectl, helm, git, gh, cat, head, tail, ls, find, grep, wc, stat)" ;;
   esac
 }
 
@@ -207,6 +250,7 @@ run() { # $@ = tool args… (already validated)
   [ "$(uname)" = Darwin ] && export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
   case "$tool" in
     git) exec git --no-pager --no-optional-locks "$@" ;;
+    gh) GH_PAGER=cat GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 exec gh "$@" ;;
     grep) exec grep --exclude='*.tfstate*' --exclude='.env*' --exclude='*.pem' --exclude='*.key' --exclude-dir=.terraform "$@" ;;
     *) exec "$tool" "$@" ;;
   esac

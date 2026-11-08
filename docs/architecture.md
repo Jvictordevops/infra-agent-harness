@@ -134,7 +134,7 @@ sequenceDiagram
 ```
 
 - `bin/ro mode on [reason]` creates `~/.config/infra-agent-harness/ro-mode` (`RO_MODE_FILE` overrides the path). From then on `ro-guard` blocks `aws`, `kubectl`, `helm`, `terraform`, `ssh`, `gh`... unless they go through `bin/ro`.
-- `bin/ro` runs one command of a fixed shape: `aws <service> <read operation> --profile P`, `kubectl <read verb> --context C`, `helm list|status|history|get metadata`, `git -C <dir> log|show|diff...`, and `cat|head|tail|ls|find|grep|wc|stat` under `RO_ROOTS`. No pipes, redirections or chaining. Secrets and credentials are refused. `RO_PROFILES` and `RO_CONTEXTS` narrow it per task.
+- `bin/ro` runs one command of a fixed shape: `aws <service> <read operation> --profile P`, `kubectl <read verb> --context C`, `helm list|status|history|get metadata`, `git -C <dir> log|show|diff...`, `gh` reads (`gh api` with GET only), and `cat|head|tail|ls|find|grep|wc|stat` under `RO_ROOTS`. No pipes, redirections or chaining. Secrets and credentials are refused. `RO_PROFILES` and `RO_CONTEXTS` narrow it per task.
 - `bin/ro --host <alias>` validates here, then runs over SSH (`BatchMode`). The remote copy (`RO_REMOTE_BIN`, default `~/infra-agent-harness/bin/ro`) validates again with its own paths and limits.
 - Only the user runs `bin/ro mode off`; the hook blocks agents from doing it, sub-agents included.
 

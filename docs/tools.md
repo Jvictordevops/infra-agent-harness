@@ -35,6 +35,7 @@ Generic notes for the agent tools the harness installs into (Claude Code, Claude
   - `kubectl <verb> … --context C`: `get`, `describe`, `logs`, `top`, `events`, `api-resources`, `auth can-i`…
   - `helm list|status|history|get metadata … --kube-context C`.
   - `git -C <dir> log|show|diff|grep|status|branch…`.
+  - `gh` reads: `repo|release|workflow list|view`, `pr list|view|diff|checks|status`, `issue list|view|status`, `run list|view`, `label list`, `search …`, `auth status`, and `gh api <endpoint>` with GET only (`-f`/`-F` need `-X GET`; no GraphQL, secrets, variables, keys or tokens). `git clone`/`fetch` are not `ro`: `ro-guard` does not block `git`, it is a local tool.
   - `cat|head|tail|ls|find|grep|wc|stat` on paths under `RO_ROOTS` (default `$HOME/code`).
   - Never: secrets (`Secrets`, `get-secret-value`, `--with-decryption`), tokens, credentials or sensitive files. There is no shell inside: no pipes, redirections or chaining; filter the output (`jq`, `grep`) outside, locally.
   - Per-task limits: `RO_PROFILES=<profile> RO_CONTEXTS=<context> bin/ro …` (comma lists).

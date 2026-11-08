@@ -70,6 +70,58 @@ no git -C "$R" diff --output=/tmp/x
 no git -C /etc log
 no git log
 
+ok gh repo list owner --limit 50
+ok gh repo view owner/repo
+ok gh pr list -R owner/repo --state open
+ok gh pr view 12 -R owner/repo --comments
+ok gh pr diff 12 -R owner/repo
+ok gh pr checks 12 -R owner/repo
+ok gh issue list -R owner/repo
+ok gh run list -R owner/repo
+ok gh run view 123 --log-failed -R owner/repo
+ok gh workflow list -R owner/repo
+ok gh search code "foo" --owner owner
+ok gh auth status
+ok gh api repos/owner/repo --jq .default_branch
+ok gh api repos/owner/repo/pulls --paginate
+ok gh api -X GET search/issues -f q=repo:owner/repo
+ok gh api --method=GET search/issues -f q=x
+no gh repo clone owner/repo
+no gh repo delete owner/repo
+no gh repo create x
+no gh pr create
+no gh pr merge 12
+no gh pr checkout 12
+no gh pr comment 12 -b x
+no gh pr view 12 --web
+no gh issue create -t x
+no gh issue close 3
+no gh run rerun 123
+no gh run download 123
+no gh run cancel 123
+no gh workflow run deploy.yml
+no gh release create v1
+no gh secret list
+no gh variable list
+no gh auth token
+no gh auth status --show-token
+no gh auth login
+no gh extension install x/y
+no gh api repos/owner/repo/issues -f title=x
+no gh api -X POST repos/owner/repo/issues
+no gh api --method DELETE repos/owner/repo
+no gh api -XPATCH repos/owner/repo
+no gh api repos/owner/repo/issues --input body.json
+no gh api graphql -f query=x
+no gh api repos/owner/repo/actions/secrets
+no gh api repos/owner/repo/actions/variables
+no gh api user/keys
+no gh api -H "X-HTTP-Method-Override: DELETE" repos/owner/repo
+ok gh api -H "Accept: application/vnd.github.diff" repos/owner/repo/pulls/1
+ok gh api --jq .name -X GET repos/owner/repo
+no gh api
+no gh
+
 ok cat "$R/values.yaml"
 ok grep -rn "image:" "$R"
 ok grep -A 2 -e repo "$R/values.yaml"
@@ -102,6 +154,8 @@ hok "~/infra-agent-harness/bin/ro aws eks list-clusters --profile P --query 'clu
 hok "git -C ~/infra-agent-harness status && grep -rn helm README.md"
 hok "ro --host other kubectl get pods --context dev | jq ."          # bare name (plugin bin/ on PATH)
 hok "ro aws eks list-clusters --profile P"
+hok "ro gh pr list -R owner/repo | head"
+hno "gh pr list -R owner/repo"
 hok "\"\${CLAUDE_PLUGIN_ROOT}/bin/ro\" aws sts get-caller-identity --profile P"
 hno "ro aws eks list-clusters --profile P; kubectl delete ns x"
 hno "ro mode off"
