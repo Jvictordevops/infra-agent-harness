@@ -9,19 +9,25 @@
 #      Path: $IAH_DENYLIST, else ~/.config/infra-agent-harness/denylist.txt
 #      Put there your company names, internal domains, hostnames, user names, people.
 #
-# Usage: bin/denylist-scan [--staged] [--no-builtin] [path...]
+# Usage: bin/denylist-scan [--staged] [--no-builtin] [--quiet] [path...]
+#        bin/denylist-scan --history
 #   --staged      scan the staged version of files (for a pre-commit hook)
 #   --no-builtin  only your denylist
+#   --quiet       print file, line and rule, never the matching text (for public CI logs)
+#   --history     scan every commit with your denylist as gitleaks rules; needs gitleaks and
+#                 a denylist; never prints the matching text. Honours .gitleaksignore.
 #   path...       limit to these paths (default: every tracked file)
 # Exit: 0 clean · 1 matches found · 2 usage or setup error
 set -uo pipefail
 
-STAGED=0 BUILTIN=1 paths=()
+STAGED=0 BUILTIN=1 QUIET=0 HISTORY=0 paths=()
 for a in "$@"; do
   case "$a" in
     --staged) STAGED=1 ;;
     --no-builtin) BUILTIN=0 ;;
-    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    --quiet) QUIET=1 ;;
+    --history) HISTORY=1 ;;
+    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
     -*) echo "denylist-scan: unknown option $a" >&2; exit 2 ;;
     *) paths+=("$a") ;;
   esac
@@ -31,6 +37,45 @@ git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "denylist-scan: not insi
 cd "$(git rev-parse --show-toplevel)" || exit 2
 
 DENYLIST="${IAH_DENYLIST:-$HOME/.config/infra-agent-harness/denylist.txt}"
+
+# One extended regex per non-comment line; rule N is the N-th of them (same numbering in both modes)
+denylist_rules() {
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|'#'*) continue ;; esac
+    printf '%s\n' "$line"
+  done < "$DENYLIST"
+}
+
+if [ "$HISTORY" = 1 ]; then
+  if [ "$STAGED" = 1 ] || [ "${#paths[@]}" -gt 0 ]; then
+    echo "denylist-scan: --history takes no other option or path" >&2; exit 2
+  fi
+  command -v gitleaks >/dev/null || { echo "denylist-scan: --history needs gitleaks" >&2; exit 2; }
+  command -v jq >/dev/null || { echo "denylist-scan: --history needs jq" >&2; exit 2; }
+  [ -s "$DENYLIST" ] || { echo "denylist-scan: --history needs your denylist at $DENYLIST" >&2; exit 2; }
+  tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+  n=0 q="'''"
+  { echo 'title = "personal denylist"'
+    while IFS= read -r pattern; do
+      n=$((n + 1))
+      case "$pattern" in *"$q"*) echo "denylist-scan: rule $n contains $q and cannot be passed to gitleaks" >&2; exit 2 ;; esac
+      printf '[[rules]]\nid = "denylist:%s"\ndescription = "personal denylist rule %s"\nregex = %s%s%s\n' "$n" "$n" "$q" "$pattern" "$q"
+    done < <(denylist_rules)
+  } > "$tmp/rules.toml" || exit 2
+  gitleaks git --config "$tmp/rules.toml" --redact=100 --no-banner --log-level error \
+    --report-format json --report-path "$tmp/report.json" --exit-code 0 . >/dev/null 2>"$tmp/err" \
+    || { echo "denylist-scan: gitleaks failed:" >&2; grep -v 'regex' "$tmp/err" | head -5 >&2; exit 2; }
+  hits="$(jq -r '.[] | "\(.Commit[0:12]) \(.File):\(.StartLine)   [\(.RuleID)]"' "$tmp/report.json" | sort -u)"
+  commits="$(git rev-list --count --all 2>/dev/null || echo '?')"
+  if [ -n "$hits" ]; then
+    printf '%s\n' "$hits"
+    echo "denylist-scan: denylist matches in the git history (text not shown). Rewrite those commits, or accept them in .gitleaksignore." >&2
+    exit 1
+  fi
+  echo "denylist-scan: history clean ($commits commits, $n rules)"
+  exit 0
+fi
 rules=()   # name|pattern
 if [ "$BUILTIN" = 1 ]; then
   rules+=(
@@ -43,10 +88,9 @@ if [ "$BUILTIN" = 1 ]; then
 fi
 if [ -s "$DENYLIST" ]; then
   n=0
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in ''|'#'*) continue ;; esac
+  while IFS= read -r line; do
     n=$((n + 1)); rules+=("denylist:$n|$line")
-  done < "$DENYLIST"
+  done < <(denylist_rules)
 else
   echo "denylist-scan: no personal denylist at $DENYLIST — only generic patterns are checked" >&2
 fi
@@ -72,7 +116,11 @@ for f in "${files[@]}"; do
     hits="$(printf '%s\n' "$content" | grep -nE -- "$pattern" | grep -vE -- "$ALLOW" || true)"
     if [ -n "$hits" ]; then
       found=1
-      printf '%s\n' "$hits" | head -5 | sed "s|^|$f:|; s|$|   [$name]|"
+      if [ "$QUIET" = 1 ]; then
+        printf '%s\n' "$hits" | head -5 | cut -d: -f1 | sed "s|^|$f:|; s|$|   [$name]|"
+      else
+        printf '%s\n' "$hits" | head -5 | sed "s|^|$f:|; s|$|   [$name]|"
+      fi
     fi
   done
 done

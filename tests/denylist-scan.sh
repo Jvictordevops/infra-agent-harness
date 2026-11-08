@@ -40,4 +40,37 @@ git rm -q --cached -f g.txt; rm -f g.txt
 out="$(IAH_DENYLIST="$TMP/none.txt" "$SCAN" 2>&1)"
 case "$out" in *"no personal denylist"*) ;; *) echo "FAIL (missing denylist warning)"; fail=1 ;; esac
 
+# --quiet reports file, line and rule, never the matching text
+printf 'line one\nthe contoso cluster\n' > q.txt; git add q.txt
+out="$("$SCAN" --quiet 2>/dev/null)"; got=$?
+[ "$got" = 1 ] || { echo "FAIL (quiet exit): expected 1, got $got"; fail=1; }
+case "$out" in *contoso*) echo "FAIL (quiet prints the text)"; fail=1 ;; esac
+case "$out" in *"q.txt:2   [denylist:1]"*) ;; *) echo "FAIL (quiet location): $out"; fail=1 ;; esac
+git rm -q --cached -f q.txt; rm -f q.txt
+
+# --history finds what was committed and removed later, without printing it
+if command -v gitleaks >/dev/null; then
+  export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=commit.gpgsign GIT_CONFIG_VALUE_0=false GIT_CONFIG_KEY_1=core.hooksPath GIT_CONFIG_VALUE_1=/dev/null
+  export GIT_AUTHOR_NAME="Dana Doe" GIT_AUTHOR_EMAIL="dana@example.com" GIT_COMMITTER_NAME="Dana Doe" GIT_COMMITTER_EMAIL="dana@example.com"
+  git rm -q --cached -f f.txt 2>/dev/null; rm -f f.txt
+  printf 'clean start\n' > h.txt; git add h.txt; git commit -q -m one
+  out="$("$SCAN" --history 2>&1)"; got=$?
+  [ "$got" = 0 ] || { echo "FAIL (clean history): expected 0, got $got: $out"; fail=1; }
+  printf 'ping the contoso cluster\n' > h.txt; git commit -q -am two
+  printf 'clean again\n' > h.txt; git commit -q -am three
+  "$SCAN" >/dev/null 2>&1 || { echo "FAIL (tree should be clean)"; fail=1; }
+  out="$("$SCAN" --history 2>&1)"; got=$?
+  [ "$got" = 1 ] || { echo "FAIL (history exit): expected 1, got $got"; fail=1; }
+  case "$out" in *contoso*) echo "FAIL (history prints the text)"; fail=1 ;; esac
+  case "$out" in *"h.txt:1   [denylist:1]"*) ;; *) echo "FAIL (history location): $out"; fail=1 ;; esac
+  # .gitleaksignore accepts a known finding by its fingerprint
+  c="$(git rev-parse HEAD~1)"; printf '%s:h.txt:denylist:1:1\n' "$c" > .gitleaksignore
+  "$SCAN" --history >/dev/null 2>&1 || { echo "FAIL (.gitleaksignore not honoured)"; fail=1; }
+  rm -f .gitleaksignore
+  out="$(IAH_DENYLIST="$TMP/none.txt" "$SCAN" --history 2>&1)"; got=$?
+  [ "$got" = 2 ] || { echo "FAIL (history without denylist): expected 2, got $got"; fail=1; }
+else
+  echo "denylist-scan: gitleaks not installed, --history tests skipped"
+fi
+
 if [ "$fail" = 0 ]; then echo "denylist-scan: all tests passed"; else echo "denylist-scan: tests FAILED"; exit 1; fi
