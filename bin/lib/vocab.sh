@@ -11,13 +11,13 @@
 #   vocab_banner_re              # ERE for the banners allowed under a record title
 
 IAH_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=conf.sh
+. "$(dirname "${BASH_SOURCE[0]}")/conf.sh"
 
 # vocab_lang [repo root] -> language code
 vocab_lang() {
   local lang="${IAH_LANG:-}"
-  if [ -z "$lang" ] && [ -n "${1:-}" ] && [ -f "$1/.harness.conf" ]; then
-    lang="$(sed -n -E 's/^[[:space:]]*language[[:space:]]*=[[:space:]]*([^[:space:]#]*).*$/\1/p' "$1/.harness.conf" | tail -1)"
-  fi
+  [ -n "$lang" ] || lang="$(conf_get "${1:-}" language)"
   printf '%s' "${lang:-en}"
 }
 

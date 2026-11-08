@@ -8,7 +8,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-unset IAH_LANG IAH_REPO
+unset IAH_LANG IAH_REPO IAH_METHOD
 export GIT_AUTHOR_NAME="Dana Doe" GIT_AUTHOR_EMAIL="dana@example.com"
 export GIT_COMMITTER_NAME="Dana Doe" GIT_COMMITTER_EMAIL="dana@example.com"
 # Throwaway repos only: do not inherit the user's commit signing or hooks
@@ -72,6 +72,45 @@ git -C "$ES" reset -q --hard
 sed -i 's/alta/baja/' "$R"; git -C "$ES" add -A
 check "check-work (es): edited record is an error" 'cw "$ES" --staged | grep -q "committed record modified"'
 git -C "$ES" reset -q --hard
+
+# --- check-work: method light | full --------------------------------------------------
+# Throwaway work with: undeclared objective 9 (numbering), an open item without id, README > 150 lines
+mw() { # $1 = repo name, $2 = method line ("" = no conf) -> repo with a work that breaks numbering
+  local r; r="$(repo "$1" "")"
+  [ -z "$2" ] || printf '%s\n' "$2" > "$r/.harness.conf"
+  nw "$r" acme prj m --date 2030-01-02
+  printf '\n## Carried\n\n- **9.1** orphan task\n' >> "$r/work/acme/2030-01-02.m/ROADMAP/2030-01-02.md"
+  echo "$r"
+}
+M0="$(mw m0 "")"; MW="$M0/work/acme/2030-01-02.m"
+check "method: default is light"            'cw "$M0" | tail -1 | grep -q "(method: light)"'
+check "method light: numbering is WARN"     'cw "$M0" | grep -q "^WARN.*objective '"'"'9'"'"' not declared"'
+check "method light: exit 0"                '(cd "$M0" && "$ROOT/bin/check-work" >/dev/null 2>&1)'
+check "method light: 0 errors"              'cw "$M0" | tail -1 | grep -q " 0 error(s)"'
+printf -- '- plain item\n' >> "$MW/ROADMAP/2030-01-02.md"
+check "method light: item without id is ERROR" 'cw "$M0" | grep -q "^ERROR.*without id"'
+sed -i '$d' "$MW/ROADMAP/2030-01-02.md"
+printf -- '- **9.1** orphan twin\n' >> "$MW/ROADMAP/2030-01-02.md"
+check "method light: duplicate task id is ERROR" 'cw "$M0" | grep -q "^ERROR.*duplicate task id '"'"'9.1'"'"'"'
+sed -i '$d' "$MW/ROADMAP/2030-01-02.md"
+sed -i 's/^## Objectives$/## Objectives\n\n| **1** | dup | x |\n| **1** | dup | x |/' "$MW/README.md"
+check "method light: duplicate objective id is ERROR" 'cw "$M0" | grep -q "^ERROR.*Objectives: duplicate id '"'"'1'"'"'"'
+git -C "$M0" checkout -q -- . 2>/dev/null; nw "$M0" acme prj big --date 2030-01-03
+for i in $(seq 1 160); do echo "line $i" >> "$M0/work/acme/2030-01-03.big/README.md"; done
+check "method light: README > 150 lines is WARN" 'cw "$M0" "$M0/work/acme/2030-01-03.big" | grep -q "^WARN.*lines > 150"'
+check "method light: README > 150 lines no ERROR" '! cw "$M0" "$M0/work/acme/2030-01-03.big" | grep -q "^ERROR.*lines > 150"'
+
+MF="$(mw mf "method=full")"
+check "method full: summary line"           'cw "$MF" | tail -1 | grep -q "(method: full)"'
+check "method full: numbering is ERROR"     'cw "$MF" | grep -q "^ERROR.*objective '"'"'9'"'"' not declared"'
+nw "$MF" acme prj big --date 2030-01-03
+for i in $(seq 1 160); do echo "line $i" >> "$MF/work/acme/2030-01-03.big/README.md"; done
+check "method full: README > 150 lines is ERROR" 'cw "$MF" "$MF/work/acme/2030-01-03.big" | grep -q "^ERROR.*lines > 150"'
+ML="$(mw ml "method=light")"
+check "method: IAH_METHOD=full overrides conf light" 'IAH_METHOD=full cw "$ML" | grep -q "^ERROR.*objective .9. not declared"'
+MB="$(mw mb "method=sloppy")"
+check "method: invalid value falls back to full" 'cw "$MB" | grep -q "^ERROR.*objective .9. not declared"'
+check "method: invalid value says so on stderr" 'cw "$MB" | grep -q "invalid method .sloppy."'
 
 # --- confidence-nudge -----------------------------------------------------------------
 nudge() { jq -n --arg p "$1" --arg c "$2" '{prompt: $p, cwd: $c}' | "$ROOT/hooks/confidence-nudge/confidence-nudge.sh"; }

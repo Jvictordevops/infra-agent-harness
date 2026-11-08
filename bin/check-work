@@ -14,6 +14,9 @@
 # legacy ones only get a WARN, closed|dropped are skipped.
 # Same works: WARN for '[~]' (in progress) items missing from README '## In progress', or on
 # struck / Blocked items.
+# Method (.harness.conf 'method=light|full', IAH_METHOD overrides; default light, invalid -> full):
+# in light, numbering messages (check_numbering) and a README over 150 lines are WARN instead of
+# ERROR, except duplicate ids; everything else stays ERROR.
 # Exit 1 if any ERROR. WARN does not fail.
 # ls | grep is safe here: it only ever lists ROADMAP/YYYY-MM-DD.md names.
 # shellcheck disable=SC2010
@@ -21,10 +24,11 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")" && pwd)"
 # shellcheck source-path=SCRIPTDIR source=lib/vocab.sh
-. "$HERE/lib/vocab.sh"
+. "$HERE/lib/vocab.sh"   # also loads lib/conf.sh
 ROOT="${IAH_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 ROOT="$(cd "$ROOT" && pwd)"
 vocab_load "$ROOT"
+METHOD="$(conf_method "$ROOT")"
 TASK_RE="^\*\*$(vocab_re "$VOC_TASK"):\*\*"
 OPEN_RE="^## $(vocab_re "$VOC_OPEN")"
 CONF_RE="^\**$(vocab_re "$VOC_CONFIDENCE"):"
@@ -39,6 +43,15 @@ SCOPE="work/"  # git pathspec(s) the record checks are limited to
 
 err()  { echo "ERROR $1: $2"; ERRORS=$((ERRORS+1)); }
 warn() { echo "WARN  $1: $2"; WARNS=$((WARNS+1)); }
+# Numbering / README-size issue: ERROR in method full, WARN in method light.
+# Duplicate ids stay ERROR in both (they make the plan ambiguous).
+num_issue() { # $1 = path, $2 = message
+  if [ "$METHOD" = full ]; then err "$1" "$2"; return; fi
+  case "$2" in
+    *"duplicate id '"*|"duplicate task id '"*) err "$1" "$2" ;;
+    *) warn "$1" "$2" ;;
+  esac
+}
 rel()  { echo "${1#"$ROOT"/}"; }
 
 in_git() { git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; }
@@ -239,7 +252,7 @@ check_numbering() {
   while IFS= read -r out; do
     kind="${out%%|*}"; msg="${out#*|}"
     case "$kind" in
-      ERR) err "$r/README.md" "$msg" ;;
+      ERR) num_issue "$r/README.md" "$msg" ;;
       OBJ) objs="$msg" ;;
       SUB) subs="$msg" ;;
       NEXT) nxt="$msg" ;;
@@ -259,8 +272,8 @@ check_numbering() {
   while IFS= read -r out; do
     kind="${out%%|*}"; msg="${out#*|}"
     case "$kind" in
-      R) err "$r/ROADMAP/$latest" "$msg" ;;
-      M) err "$r/README.md" "$msg" ;;
+      R) num_issue "$r/ROADMAP/$latest" "$msg" ;;
+      M) num_issue "$r/README.md" "$msg" ;;
     esac
   done < <(awk -v objs="$objs" -v subs="$subs" -v hist="$hist" -v nextids="$nxt" -v noobj="$noobj" -v revlabel="$revlabel" "$ROADMAP_AWK" "$rf")
 
@@ -351,7 +364,7 @@ check_work() {
       v="$(fm_get "$readme" "$key")"; [ -z "$v" ] || echo "$v" | grep -Eq '^\[.*\]$' || err "$r/README.md" "$key must be a [list]"
     done
     v="$(fm_get "$readme" updated)"; [ -z "$v" ] || echo "$v" | grep -Eq "^$DATE_RE$" || err "$r/README.md" "updated must be YYYY-MM-DD"
-    n="$(wc -l < "$readme" | tr -d ' ')"; [ "$n" -le 150 ] || err "$r/README.md" "$n lines > 150"
+    n="$(wc -l < "$readme" | tr -d ' ')"; [ "$n" -le 150 ] || num_issue "$r/README.md" "$n lines > 150"
   fi
 
   # RECORD
@@ -552,5 +565,5 @@ $DIRS
 EOF4
 check_changed_records   # no mode = index vs HEAD, like --staged
 
-echo "check-work: $COUNT work(s), $ERRORS error(s), $WARNS warning(s)"
+echo "check-work: $COUNT work(s), $ERRORS error(s), $WARNS warning(s) (method: $METHOD)"
 [ "$ERRORS" -eq 0 ]

@@ -10,7 +10,7 @@ updated: {{DATE}}
 ---
 > **Rules:** this README is the only rewritable doc (besides `training/` units, if any); nothing else in the work root except `LESSONS.md`.
 > `RECORD/` is append-only (`YYYY-MM-DD.<slug>.<WIP|done>.md`); plan lives in `ROADMAP/<date>.md`; raw data in `evidence/`, scratch in `.tmp/`.
-> Standard: [STANDARD.md](../../../STANDARD.md) · ids: objectives `N` · tasks `N.M`/`N.M.K` with their short name (§7) · validate with `bin/check-work`.
+> Method: `docs/method.md` of the harness (`method-full.md` with `method=full`) · ids: objectives `N` · tasks `N.M`/`N.M.K` with their short name · validate with `bin/check-work`.
 
 # {{TITLE}}
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Read-only executor (STANDARD §11, docs/tools.md): runs ONE allow-listed read-only command, here or on
+# Read-only executor (docs/tools.md): runs ONE allow-listed read-only command, here or on
 # another machine over SSH, for executors and their sub-agents. Cloud roles are usually admin, so the
 # guard is ours: this allow-list + the ro-guard hook (hooks/ro-guard), which in read-only mode blocks
 # aws/kubectl/helm/ssh… that do not go through bin/ro.
