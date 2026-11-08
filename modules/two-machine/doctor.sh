@@ -12,5 +12,6 @@ command -v ssh >/dev/null && ok "two-machine: ssh present" || warn "two-machine:
 [ -n "${RO_REMOTE_BIN:-}" ] && ok "two-machine: RO_REMOTE_BIN set ($RO_REMOTE_BIN)" \
   || ok "two-machine: RO_REMOTE_BIN not set (bin/ro --host uses ~/infra-agent-harness/bin/ro on the remote machine)"
 
-[ -e "$HOME/.claude/skills/role" ] && ok "two-machine: role skill linked" \
-  || warn "two-machine: role skill not linked (bin/link-harness)"
+if plugin_mode; then ok "two-machine: role skill comes from the plugin"
+else [ -e "$HOME/.claude/skills/role" ] && ok "two-machine: role skill linked" \
+  || warn "two-machine: role skill not linked (bin/link-harness)"; fi

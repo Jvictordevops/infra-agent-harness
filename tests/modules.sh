@@ -78,6 +78,8 @@ check "doctor + evidence: fingerprint mismatch fails" 'grep -q "FAIL  evidence: 
 out="$(IAH_MODULES=two-machine IAH_MACHINE=box doc)"
 check "doctor + two-machine: machine name"        'grep -q "OK    two-machine: this machine is .box." <<<"$out"'
 check "doctor + two-machine: role skill linked"   'grep -q "OK    two-machine: role skill linked" <<<"$out"'
+out="$(IAH_PLUGIN=1 IAH_MODULES=two-machine IAH_MACHINE=box doc)"
+check "doctor plugin + two-machine: role from the plugin, no link warning" 'grep -q "OK    two-machine: role skill comes from the plugin" <<<"$out" && ! grep -q "role skill not linked" <<<"$out"'
 check "doctor + two-machine: ssh and RO_REMOTE_BIN lines" 'grep -q "two-machine: ssh" <<<"$out" && grep -q "two-machine: RO_REMOTE_BIN" <<<"$out"'
 check "doctor without evidence module: no evidence lines" '! grep -q "evidence:" <<<"$out"'
 out="$(IAH_MODULES=nope doc)"
