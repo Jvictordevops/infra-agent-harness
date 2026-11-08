@@ -69,33 +69,6 @@ SSH into a machine is only for installing and maintaining the harness and for `b
 - open it when you ask for it, close it when done;
 - if the address of the machine changes, update `HostName` of its alias in `~/.ssh/config`.
 
-### macOS
-
-On the Mac, turn on System Settings > General > Sharing > Remote Login (only your user). Then, with the **public** key of the other machine:
-
-```bash
-modules/two-machine/bin/setup-ssh-access --pubkey-file ~/id_ed25519.pub     # or --pubkey 'ssh-ed25519 AAAA… name', or pipe it with `--pubkey-file -`
-modules/two-machine/bin/setup-ssh-access --check                              # report only, changes nothing
-modules/two-machine/bin/setup-ssh-access --pubkey-file ~/k.pub --cpush       # also send the summary with cpush (evidence module)
-```
-
-- Adds the key to `~/.ssh/authorized_keys` (once), writes the drop-in `/etc/ssh/sshd_config.d/100-infra-agent-harness.conf` (asks for sudo, validates with `sshd -t`, reverts if invalid) and checks that Remote Login is on. Idempotent.
-- Prints a summary (user and host name to put in the other machine's `~/.ssh/config`). Nothing is sent anywhere unless you pass `--cpush`.
-- To close: turn Remote Login off again.
-
-### Linux (manual, untested)
-
-Not tested on a real machine yet. With the public key of the other machine:
-
-```bash
-cat other-machine.pub >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
-printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\nAllowUsers %s\n' "$USER" \
-  | sudo tee /etc/ssh/sshd_config.d/100-infra-agent-harness.conf
-sudo sshd -t && sudo systemctl reload sshd      # the unit is "ssh" on Debian/Ubuntu
-```
-
-If `sshd -t` fails, remove the drop-in before reloading. Check first that `/etc/ssh/sshd_config` has `Include /etc/ssh/sshd_config.d/*.conf`. Stop the service when you do not need it.
-
 ## Evidence
 
 - **With the `evidence` module** (`modules=two-machine,evidence`): the work is marked `evidence_store:` by the evidence command's `init`; the `role` skill runs `sync` when a role starts (and the executor again when it finishes) and `archive` when the work closes. See `modules/evidence/README.md`.
@@ -104,4 +77,3 @@ If `sshd -t` fails, remove the drop-in before reloading. Check first that `/etc/
 ## Checks and tests
 
 - `bin/doctor` with the module active: machine name, `ssh` present, `RO_REMOTE_BIN`, `role` skill linked. No network calls.
-- `modules/two-machine/tests/setup-ssh-access.sh`: argument parsing and `--check` in a throwaway HOME; never touches the real `~/.ssh` or sshd.

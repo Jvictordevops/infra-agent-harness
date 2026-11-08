@@ -225,6 +225,6 @@ For each setting the first of these wins:
 - **Hooks can be changed by their owner.** `~/.claude/settings.json` and the read-only mode file are yours; the harness stops agents from switching the mode off, but nothing stops you.
 - **Archives have no integrity protection** (AES-256-CBC). Confidentiality depends on the key file; losing it loses the archives.
 - **The LAN token is shared.** Anyone on your network with the token can read and write the evidence store and clipboard. The store is not encrypted at rest by the module.
-- **Partly tested.** Podman, macOS as an evidence host, the Bitwarden backend beyond syntax, and SSH setup on Linux are marked untested in the module READMEs.
+- **Partly tested.** Podman, macOS as an evidence host and the Bitwarden backend beyond syntax are marked untested in the module READMEs.
 - **Commit hooks can be skipped** with `git commit --no-verify`, and `pre-commit` needs `gitleaks` installed. In this repo the CI catches what a skipped hook lets through, but only after the push.
 - A full threat model is planned, not written.
