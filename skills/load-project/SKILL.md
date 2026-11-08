@@ -24,4 +24,4 @@ Then confirm with:
 - In progress: items marked `[~]` in the current ROADMAP revision (id + short name), first, and propose to continue them. Warn about any mismatch between README `## In progress` and the `[~]` items.
 - Next tasks and blockers: `In progress` plus `Next steps`, each as id + short name (`1.3.4 key script`), checked against the current revision (open items of `Carried`/`New`; those under `Blocked` flagged as blocked). Never `#id`. Then the WIP records (names only).
 - If the frontmatter has `numbering: legacy`, say so and show the ids as written.
-- Tickets: if `tickets:` is not empty and the context card (`contexts/<name>/AGENTS.md`) names a tracker you can read, show each ticket's name, state and open tasks, read-only. If you cannot reach it, say so and continue.
+- Tickets: if `tickets:` is not empty and the context card (`contexts/<name>/AGENTS.md`) has a `- **Tracker:** …` line (how to read it) you can use, show each ticket's name, state and open tasks, read-only. If you cannot reach it, say so and continue.

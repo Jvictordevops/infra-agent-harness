@@ -21,6 +21,7 @@ work/<context>/<YYYY-MM-DD.slug>/
 ```
 
 - `<context>` is `global` or a folder that has `contexts/<context>/` (a company, client, team or platform: its stack, accounts and conventions).
+- If the context uses a ticket tracker, its card `contexts/<context>/AGENTS.md` has one line: `- **Tracker:** <name> — <how to read it: MCP server/tool names or CLI> (<optional pointer to a file with details>)`. The skills read tickets through it (read-only; comments only after you confirm the text). No line, no ticket access.
 - Folder name: opening date + kebab-case slug of up to 5 words (`2026-09-09.queue-autoscaling`). No versions, no `-final`, no spaces or accents.
 - Nothing else in the work root: the plan is the ROADMAP, not a `PLAN.md`.
 - Prompts for another agent go in the chat, never in files.

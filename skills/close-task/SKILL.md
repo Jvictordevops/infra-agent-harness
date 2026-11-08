@@ -59,7 +59,7 @@ Run a small model on the session (`claude -p --model haiku`) to find every signa
 
 ## Tickets (only if the README has a non-empty `tickets:`)
 
-After persisting a `progress` or `finding`, draft a short comment (bullets: what was done and its effect). Show the exact text and ask "Shall I post it on <ticket>?". Only with an OK, post it with the tracker integration the context card names. Never change state, fields, owner or iteration. If the integration fails, say so and close anyway.
+After persisting a `progress` or `finding`, draft a short comment (bullets: what was done and its effect). Show the exact text and ask "Shall I post it on <ticket>?". Only with an OK, post it with the integration named in the `- **Tracker:** …` line of the context card (`contexts/<name>/AGENTS.md`); without that line, skip this step. Never change state, fields, owner or iteration. If the integration fails, say so and close anyway.
 
 ## Final validation (mandatory if a work was written)
 

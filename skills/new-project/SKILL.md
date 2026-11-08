@@ -19,6 +19,8 @@ Creates a work folder in the repository that holds your works (`$IAH_REPO`, else
 | Constraints | restrictions / do-not-touch (optional) | user words; else leave TODO |
 | Title, tickets, repos | optional | user words |
 
+If the user gives a ticket id and the context card (`contexts/<name>/AGENTS.md`) has a `- **Tracker:** …` line you can read, fetch the ticket read-only: confirm it exists and is not archived, show its name and ask the user to confirm it. Never create or change tickets. If you cannot reach it, say so and continue.
+
 Before creating, check duplicates: glob `work/*/*<keyword>*/README.md`. If a matching active work exists, propose loading it (`load-project`) instead.
 
 ## 2. Create

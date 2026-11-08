@@ -6,6 +6,7 @@
 #   conf_get "$repo_root" language     # last value of the key, or empty
 #   conf_method "$repo_root"           # light | full  (IAH_METHOD > .harness.conf > light)
 #   conf_modules "$repo_root"          # active optional modules, one per line (IAH_MODULES > .harness.conf)
+#   conf_denylist "$repo_root"         # path of the private denylist, or empty (IAH_DENYLIST > denylist= in .harness.conf)
 
 # conf_get <repo root> <key> -> value (empty when the file or the key is missing)
 conf_get() {
@@ -32,6 +33,16 @@ conf_modules() {
     m="$(sed -n -E 's/^[[:space:]]*modules[[:space:]]*=([^#]*).*$/\1/p' "$1/.harness.conf" | tail -1)"
   else m=""; fi
   printf '%s\n' "$m" | tr ',' '\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' | grep -v '^$' || true
+}
+
+# conf_denylist [repo root] -> path of the private denylist, or empty when none is configured.
+# IAH_DENYLIST (a path, used as is) wins; else "denylist=<path relative to the repo root>" in .harness.conf
+# (an absolute path is accepted as is). The file need not exist: callers check.
+conf_denylist() {
+  local d="${IAH_DENYLIST:-}"
+  [ -n "$d" ] || d="$(conf_get "${1:-}" denylist)"
+  [ -n "$d" ] || return 0
+  case "$d" in /*) printf '%s' "$d" ;; *) printf '%s/%s' "${1:-.}" "$d" ;; esac
 }
 
 # plugin_mode -> exit 0 when the harness is installed as a Claude Code plugin on this machine

@@ -105,7 +105,8 @@ git config core.hooksPath ~/infra-agent-harness/bin/hooks
 | `language` | `.harness.conf` | `en`, `es` (a `locale/<lang>.sh` file) | `en` |
 | `method` | `.harness.conf` | `light`, `full` | `light` |
 | `modules` | `.harness.conf` | comma list: `evidence`, `two-machine` | none |
-| `IAH_LANG`, `IAH_METHOD`, `IAH_MODULES` | environment | same as above; they win over `.harness.conf` | unset |
+| `denylist` | `.harness.conf` | path, relative to the work repo, of your private denylist; `link-harness` links `~/.config/infra-agent-harness/denylist.txt` to it (read by `denylist-scan`) | none |
+| `IAH_LANG`, `IAH_METHOD`, `IAH_MODULES`, `IAH_DENYLIST` | environment | same as above; they win over `.harness.conf` (`IAH_DENYLIST` is the path itself) | unset |
 | `IAH_REPO` | environment | path of the work repo | the git repo of the current directory |
 | `evidence.conf` | `~/.config/infra-agent-harness/` | per-machine keys of the evidence module | see its README |
 

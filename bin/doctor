@@ -7,7 +7,7 @@
 # their checks from modules/<name>/doctor.sh.
 # Repository with your works: $IAH_REPO, else the git repository of the current directory (optional).
 # 'cond && ok … || warn …' is safe: ok/warn/fail only append to an array and never fail.
-# shellcheck disable=SC2015
+# shellcheck disable=SC2015,SC2088
 set -uo pipefail
 
 HARNESS="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")/.." && pwd)"
@@ -47,6 +47,24 @@ if [ -n "$REPO" ] && [ "$REPO" != "$HARNESS" ]; then
   else warn "repo $REPO: hooksPath is '$hp', not $HARNESS/bin/hooks (left as is)"; fi
   vocab_load "$REPO" 2>/dev/null; ok "repo $REPO: record language '$VOC_LANG' (.harness.conf)"
   ok "repo $REPO: check-work method '$(conf_method "$REPO" 2>/dev/null)' (.harness.conf / IAH_METHOD)"
+  # work repo behind its upstream (local refs only: no fetch of the work repo)
+  if up="$(git -C "$REPO" rev-parse --abbrev-ref '@{u}' 2>/dev/null)"; then
+    wb="$(git -C "$REPO" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)"
+    [ "$wb" = 0 ] && ok "repo $REPO: not behind $up (last fetched state)" || warn "repo $REPO: work repo is $wb commit(s) behind $up: git -C $REPO pull --rebase"
+  fi
+  # GLOBAL.md of the work repo must be what ~/.claude/CLAUDE.md resolves to
+  if [ -f "$REPO/GLOBAL.md" ]; then
+    [ "$(readlink -f "$HOME/.claude/CLAUDE.md" 2>/dev/null)" = "$(readlink -f "$REPO/GLOBAL.md")" ] \
+      && ok "~/.claude/CLAUDE.md -> $REPO/GLOBAL.md" \
+      || warn "~/.claude/CLAUDE.md does not resolve to $REPO/GLOBAL.md: bin/link-harness (from $REPO)"
+  fi
+  # private denylist (denylist= in .harness.conf)
+  dl="$(conf_denylist "$REPO")"; dl_link="$HOME/.config/infra-agent-harness/denylist.txt"
+  if [ -n "$dl" ]; then
+    if [ -f "$dl" ] && [ "$(readlink -f "$dl_link" 2>/dev/null)" = "$(readlink -f "$dl")" ]; then ok "denylist: $dl_link -> $dl"
+    elif [ ! -f "$dl" ]; then warn "denylist file $dl (denylist= / IAH_DENYLIST) does not exist"
+    else warn "denylist: $dl_link does not resolve to $dl: bin/link-harness (from $REPO)"; fi
+  fi
   n="$(find "$REPO/contexts" -mindepth 1 -maxdepth 1 -type d ! -name '_*' 2>/dev/null | wc -l | tr -d ' ')"
   [ "$n" -gt 0 ] && ok "repo $REPO: $n context(s) in contexts/" || warn "repo $REPO: no contexts/<name>/ yet (works can only go under work/global/)"
 else

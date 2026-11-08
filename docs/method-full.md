@@ -13,7 +13,7 @@ Two separate things: the **harness** (this repo: `bin/`, `hooks/`, `skills/`, `t
 
 ```
 <consumer-repo>/
-├── .harness.conf        # language=<code>, method=light|full
+├── .harness.conf        # language=<code>, method=light|full, modules=…, denylist=<path>
 ├── GLOBAL.md            # always-loaded instructions (from templates/GLOBAL.md; keep it short, ~1,000 tokens; linked from ~/.claude/CLAUDE.md and ~/.copilot/copilot-instructions.md by bin/link-harness)
 ├── AGENTS.md, CLAUDE.md # 3-line pointers to GLOBAL.md (avoid double loading; from templates/root-pointer.md)
 ├── contexts/<name>/     # stack, accounts, decisions.md, lessons.md, patterns.md (append-only logs)
@@ -190,13 +190,21 @@ Confidence: high|medium|low
 |---|---|---|
 | How to work with AI, destructive-command guard, output style | `GLOBAL.md` | Rare |
 | Tool-specific (routing, compaction…) | `docs/tools.md` | Rare |
-| Stack, accounts, regions, tags | `contexts/<name>/AGENTS.md` | Platform changes |
+| Stack, accounts, regions, tags, tracker | `contexts/<name>/AGENTS.md` | Platform changes |
 | Per-technology conventions | `instructions/*.instructions.md` | Rare |
 | Decisions affecting >1 work | `contexts/<name>/decisions.md` | Append-only, link to record |
 | Reusable traps | `contexts/<name>/lessons.md` | Append-only, link to record |
 | State and plan of a work | `work/…/README.md` + `ROADMAP/` | Every session |
 | Reasoning, findings, local decisions | `work/…/RECORD/` | Append-only |
 | Raw data | `work/…/evidence/` | Immutable; never versioned (see §11) |
+
+**Tracker line.** If the context uses a ticket tracker, its card has one line in this exact shape, which the skills `load-project`, `close-task` and `new-project` look for:
+
+```
+- **Tracker:** <name> — <how to read it: MCP server/tool names or CLI> (<optional pointer to a file with details>)
+```
+
+Example: `- **Tracker:** Jira — MCP server "atlassian", tools getJiraIssue and searchJiraIssuesUsingJql (details: tracker.md)`. Without the line, skills do not touch tickets. They read tickets only; a comment is posted only after you confirm its exact text.
 
 **Promotion:** when closing a work or a decision record, if it would apply to *another* work → one line in `contexts/<name>/decisions.md|lessons.md` linking the record.
 

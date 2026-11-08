@@ -211,6 +211,7 @@ For each setting the first of these wins:
 - `language`: `IAH_LANG`, then `language=` in `.harness.conf`, then `en`. The words come from `locale/<lang>.sh`; keys a locale omits fall back to English.
 - `method`: `IAH_METHOD`, then `method=` in `.harness.conf`, then `light`. An invalid value warns and acts as `full`.
 - `modules`: `IAH_MODULES` (even when empty), then `modules=` in `.harness.conf`, then none. An unknown module name only warns.
+- `denylist`: `IAH_DENYLIST` (a path), then `denylist=` in `.harness.conf` (relative to the work repo), then none. `link-harness` makes `~/.config/infra-agent-harness/denylist.txt` (the default list of `denylist-scan`) a symlink to it; a different link or file there is backed up with a warning, a missing file only warns. `doctor` checks the link read-only.
 - Work repo: `IAH_REPO`, then the git repo of the current directory.
 - Per machine, not per repo: `~/.config/infra-agent-harness/evidence.conf` (`IAH_EVIDENCE_CONF` changes the path), read only by the evidence module.
 - `.harness.conf` and the locale files are read as data; nothing in them is executed.
