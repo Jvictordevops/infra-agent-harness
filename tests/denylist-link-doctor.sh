@@ -95,6 +95,7 @@ out="$(doc "$H")"
 grep -q "^WARN  .*work repo is 1 commit(s) behind origin/main: git -C $H/work pull --rebase" <<<"$out" || ko "no behind-upstream warning: $(grep -i behind <<<"$out")"
 [ "$(snap "$H")" = "$before" ] || ko "doctor changed the home or the work repo (behind case)"
 H="$(new_home k)"
-! grep -q "behind" <<<"$(doc "$H")" || ko "behind warning for a repo without upstream"
+# only the work-repo warning: doctor also warns when the harness clone itself is behind, which depends on the machine
+! grep -q "work repo is .* behind" <<<"$(doc "$H")" || ko "behind warning for a repo without upstream"
 
 if [ "$fail" = 0 ]; then echo "denylist link and doctor work-repo checks: all tests passed"; else echo "denylist link and doctor work-repo checks: tests FAILED"; exit 1; fi
