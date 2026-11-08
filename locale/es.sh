@@ -50,6 +50,9 @@ VOC_TU_WALKTHROUGH="2. El recorrido"
 VOC_TU_CONCEPTS="4. Conceptos"
 VOC_TU_QUESTIONS="7. Preguntas"
 
+# Palabra que marca una tarea delegada al ejecutor (módulo two-machine): '⇢ <palabra>' en la ROADMAP
+VOC_EXECUTOR="ejecutor"
+
 # README objectives table
 VOC_OBJECTIVE="Objetivo"
 VOC_DONE_WHEN="Hecho cuando"

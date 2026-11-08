@@ -52,6 +52,9 @@ VOC_TU_WALKTHROUGH="2. The walkthrough"
 VOC_TU_CONCEPTS="4. Concepts"
 VOC_TU_QUESTIONS="7. Questions"
 
+# Marker word for a task delegated to the executor (two-machine module): '⇢ <word>' in the ROADMAP
+VOC_EXECUTOR="executor"
+
 # README objectives table
 VOC_OBJECTIVE="Objective"
 VOC_DONE_WHEN="Done when"

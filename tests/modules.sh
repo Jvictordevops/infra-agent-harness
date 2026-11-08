@@ -45,6 +45,9 @@ printf 'modules=evidence\n' > "$R/.harness.conf"; rm -f "$HOME/.local/bin/cpush"
 ( cd "$R" && "$ROOT/bin/link-harness" --quiet >/dev/null 2>&1 )
 check "link-harness: modules= in the repo's .harness.conf" '[ -L "$HOME/.local/bin/cpush" ]'
 rm "$R/.harness.conf"
+out="$(IAH_MODULES=two-machine run_link)"
+check "link-harness + two-machine: known module, no warning" '! grep -q "unknown module" <<<"$out"'
+check "link-harness + two-machine: role skill linked"        '[ -L "$HOME/.claude/skills/role" ]'
 
 # --- doctor ----------------------------------------------------------------------------
 doc() { (cd "$TMP" && "$ROOT/bin/doctor" 2>&1) || true; }
@@ -61,6 +64,11 @@ check "doctor + evidence: key present, perms fixed" 'grep -q "evidence: key pres
 printf 'key_fingerprint=000000000000\n' > "$HOME/.config/infra-agent-harness/evidence.conf"
 out="$(IAH_MODULES=evidence EVIDENCE_KEY="$TMP/key" doc)"
 check "doctor + evidence: fingerprint mismatch fails" 'grep -q "FAIL  evidence: key fingerprint .* does NOT match" <<<"$out"'
+out="$(IAH_MODULES=two-machine IAH_MACHINE=box doc)"
+check "doctor + two-machine: machine name"        'grep -q "OK    two-machine: this machine is .box." <<<"$out"'
+check "doctor + two-machine: role skill linked"   'grep -q "OK    two-machine: role skill linked" <<<"$out"'
+check "doctor + two-machine: ssh and RO_REMOTE_BIN lines" 'grep -q "two-machine: ssh" <<<"$out" && grep -q "two-machine: RO_REMOTE_BIN" <<<"$out"'
+check "doctor without evidence module: no evidence lines" '! grep -q "evidence:" <<<"$out"'
 out="$(IAH_MODULES=nope doc)"
 check "doctor: unknown module warns"              'grep -q "WARN  module .nope." <<<"$out"'
 printf '' > "$HOME/.config/infra-agent-harness/evidence.conf"

@@ -172,6 +172,7 @@ Confidence: high|medium|low
   - Done: struck, and the `[~]` is removed. Blocked items stay in `## Blocked`, without `[~]`.
   - **Rule:** when an agent **starts** a task it marks it `[~]` in the current revision and adds it (id + short name) to README `## In progress` immediately, before doing the work (not only at close). When finished: strike it (no `[~]`) and remove it from `In progress`. The in-progress state is thus committed with the work even if a session ends abruptly without `close-task`.
 - README `Next steps` = next 3-5 task ids of the current revision, with their short name (no duplication).
+- **Delegated task** (module `two-machine`): the architect marks it `[~]` and appends the executor marker, `- **N.M** [~] <short name>. <1-2 lines> ⇢ <executor word> → [brief]`. The word is `VOC_EXECUTOR` of the repo language (`executor` / `ejecutor`). After reviewing the executor's result record the architect strikes the item and removes the marker. See `modules/two-machine/README.md`.
 
 ### 7.3 Changing the numbering of an existing work
 
@@ -225,4 +226,8 @@ All of it lives in the harness; the consumer repo enables it with `git config co
 
 ## 11. Optional modules
 
-Two-machine mode (architect/executor roles, delegated tasks) and the shared evidence store are optional modules, documented separately (coming).
+Two optional modules, enabled per work repo with `modules=` in `.harness.conf` (`link-harness` and `doctor` read it):
+
+- `two-machine`: architect/executor roles between two machines or sessions, briefs and result records, delegated tasks, read-only executors over SSH. See `modules/two-machine/README.md` (skill `role`).
+- `evidence`: evidence store and clipboard shared between your machines, encrypted archives on close. See `modules/evidence/README.md`.
+

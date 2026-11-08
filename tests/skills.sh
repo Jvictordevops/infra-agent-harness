@@ -16,7 +16,8 @@ for f in "$ROOT"/skills/*/SKILL.md; do
   [ "$name" = "$dir" ] || ko "$dir: name '$name' != folder"
   awk 'NR>1 && /^---$/ {exit} /^description: *"?.{20,}/ {found=1} END {exit !found}' "$f" || ko "$dir: description missing or too short"
   grep -nE '~/code/|/Users/' "$f" && ko "$dir: private path"
-  grep -nE '[áéíóúñ¿¡]| (el|la|los|las|del|para|que|con|una?) ' "$f" | head -3 | grep . && ko "$dir: Spanish text left"
+  # the frontmatter description may carry Spanish trigger phrases (repositories in language=es use them)
+  grep -v '^description:' "$f" | grep -nE '[áéíóúñ¿¡]| (el|la|los|las|del|para|que|con|una?) ' | head -3 | grep . && ko "$dir: Spanish text left"
 done
 [ "$n" -gt 0 ] || ko "no skills found"
 

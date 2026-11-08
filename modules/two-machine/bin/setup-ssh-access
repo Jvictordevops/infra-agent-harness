@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# two-machine module: let another machine of yours SSH into THIS Mac, keys only. macOS only. Idempotent.
+#   1. authorizes the public key you give in ~/.ssh/authorized_keys
+#   2. sshd: keys only, no passwords, no root, only this user (drop-in file, validated with sshd -t,
+#      reverted if invalid; asks for sudo)
+#   3. checks that Remote Login is on, prints a summary (optionally sends it with the evidence module's cpush)
+# Before: System Settings > General > Sharing > Remote Login ON (only your user, no full disk access).
+# The default state of this Mac is SSH closed: open it when needed, close it afterwards.
+#
+# Usage: setup-ssh-access [--check] [--cpush] [--pubkey-file <file|-> | --pubkey '<ssh-… key>']
+#   --pubkey-file F   file with ONE public key line (e.g. ~/.ssh/id_ed25519.pub copied from the other machine)
+#   --pubkey 'K'      the public key as text
+#   --pubkey-file -   read the public key from stdin (e.g. ssh other-host cat ~/.ssh/id_ed25519.pub | setup-ssh-access --pubkey-file -)
+#   --check           only report: change nothing (no key added, no sudo, no sshd change)
+#   --cpush           copy the summary to the clipboard and send it with cpush (evidence module), if cpush is on PATH
+# Only PUBLIC keys are ever read. Nothing is sent anywhere unless you pass --cpush.
+set -euo pipefail
+
+CONF=/etc/ssh/sshd_config.d/100-infra-agent-harness.conf
+
+usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' >&2; }
+die() { echo "setup-ssh-access: $*" >&2; exit 1; }
+
+CHECK=0; CPUSH=0; PUBKEY=""; PUBFILE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check) CHECK=1 ;;
+    --cpush) CPUSH=1 ;;
+    --pubkey) [ $# -ge 2 ] || die "--pubkey needs a value"; PUBKEY="$2"; shift ;;
+    --pubkey-file) [ $# -ge 2 ] || die "--pubkey-file needs a file"; PUBFILE="$2"; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage; die "unknown argument: $1" ;;
+  esac
+  shift
+done
+
+[ "$(uname)" = "Darwin" ] || die "this script is for macOS (on Linux follow the manual guide in modules/two-machine/README.md)"
+
+# Public key: option, file or stdin (only with '--pubkey-file -', so a script never waits on a pipe)
+if [ "$PUBFILE" = "-" ]; then
+  PUBKEY="$(cat)"
+elif [ -n "$PUBFILE" ]; then
+  [ -r "$PUBFILE" ] || die "cannot read $PUBFILE"
+  PUBKEY="$(cat "$PUBFILE")"
+fi
+if [ -n "$PUBKEY" ]; then
+  [ "$(printf '%s\n' "$PUBKEY" | grep -c .)" = 1 ] || die "give exactly one public key line"
+  PUBKEY="$(printf '%s' "$PUBKEY" | tr -d '\r')"
+  # type + base64 body (+ optional comment); no leading authorized_keys options, no private key
+  printf '%s' "$PUBKEY" | grep -Eq '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/]+=*( .*)?$' \
+    || die "that is not a public key line (expected 'ssh-ed25519 AAAA… comment')"
+  if command -v ssh-keygen >/dev/null; then
+    printf '%s\n' "$PUBKEY" | ssh-keygen -l -f /dev/stdin >/dev/null 2>&1 || die "ssh-keygen does not accept that public key"
+  fi
+elif [ "$CHECK" = 0 ]; then
+  usage; die "no public key given (--pubkey-file, --pubkey or --pubkey-file -)"
+fi
+
+R=(); ok() { R+=("OK    $*"); }; warn() { R+=("WARN  $*"); }; fail() { R+=("FAIL  $*"); }
+ME="$(whoami)"; HOST="$(hostname -s)"
+
+# 0. Remote Login on?
+if nc -z -G 2 127.0.0.1 22 >/dev/null 2>&1; then ok "Remote Login is on (port 22)"; else fail "Remote Login is OFF: System Settings > General > Sharing > Remote Login"; fi
+
+# 1. Authorize the key
+AK="$HOME/.ssh/authorized_keys"
+if [ -n "$PUBKEY" ]; then
+  keybody="$(printf '%s' "$PUBKEY" | awk '{print $1" "$2}')"
+  if [ "$CHECK" = 1 ]; then
+    if grep -qF "$keybody" "$AK" 2>/dev/null; then ok "key is authorized"; else warn "key is NOT authorized yet (run without --check)"; fi
+  else
+    mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+    touch "$AK" && chmod 600 "$AK"
+    if grep -qF "$keybody" "$AK"; then ok "key already authorized"
+    else printf '%s\n' "$PUBKEY" >> "$AK"; ok "key authorized"; fi
+  fi
+fi
+
+# 2. Keys only (sudo)
+want="$(printf '# infra-agent-harness/modules/two-machine/bin/setup-ssh-access\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\nAllowUsers %s\n' "$ME")"
+if ! grep -qsE '^Include /etc/ssh/sshd_config.d/' /etc/ssh/sshd_config; then
+  warn "/etc/ssh/sshd_config does not include sshd_config.d: passwords NOT disabled"
+elif [ "$(cat "$CONF" 2>/dev/null)" = "$want" ]; then
+  ok "sshd: keys only, no root, only user $ME (already set)"
+elif [ "$CHECK" = 1 ]; then
+  warn "sshd: keys-only drop-in $CONF is missing or different (run without --check)"
+else
+  echo "setup-ssh-access: sudo is needed to restrict sshd to keys only"
+  printf '%s\n' "$want" | sudo tee "$CONF" >/dev/null
+  if sudo /usr/sbin/sshd -t 2>/dev/null; then ok "sshd: keys only, no root, only user $ME"
+  else sudo rm -f "$CONF"; fail "sshd config invalid, reverted (nothing changed)"; fi
+fi
+
+# 3. Report
+summary="$(printf '=== setup-ssh-access%s · %s · user %s · host %s\n' "$([ "$CHECK" = 1 ] && echo ' --check')" "$(date '+%Y-%m-%d %H:%M')" "$ME" "$HOST"; printf '%s\n' "${R[@]}")"
+echo "$summary"
+if [ "$CPUSH" = 1 ]; then
+  if command -v cpush >/dev/null; then
+    printf '%s' "$summary" | pbcopy && cpush && echo "(sent with cpush; on the other machine: cpull)"
+  else
+    echo "(cpush not found: enable the evidence module and run bin/link-harness; tell the other machine user '$ME' and host '$HOST' yourself)"
+  fi
+else
+  echo "(tell the other machine user '$ME' and host '$HOST'; --cpush sends this summary with the evidence module)"
+fi
+! printf '%s\n' "${R[@]}" | grep -q '^FAIL'
