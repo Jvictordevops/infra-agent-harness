@@ -30,7 +30,7 @@ Cluster: [company]-[env]-[region]
 ### Namespaces
 ```yaml
 # Format: [env]-[team]-[app]
-# Ejemplos:
+# Examples:
 prod-platform-api
 staging-data-pipeline
 dev-app-frontend

@@ -403,6 +403,6 @@ Prod:    RTO: 1h,  RPO: 15m
 
 ## 📝 Notas
 
-- **Regiones preferidas:** [us-east-1, eu-west-1, etc.]
+- **Preferred regions:** [us-east-1, eu-west-1, etc.]
 - **AWS Organizations:** [OU structure details]
 - **Service Control Policies:** [Policies applied]

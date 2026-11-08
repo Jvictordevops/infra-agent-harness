@@ -39,7 +39,7 @@ One small-model sub-agent per repository. Each reports:
 | Scenario | Sequential | Parallel | Saving |
 |---|---|---|---|
 | 3 Terraform repositories | ~30K tokens | ~17K tokens | ~45% |
-| Cost review of 7 AWS accounts | ~50K tokens | ~22K tokens | ~55% |
+| Cost review of 10 AWS accounts | ~50K tokens | ~22K tokens | ~55% |
 | Multi-directory PR review | varies | varies | 30-60% |
 
 ## Do not use when

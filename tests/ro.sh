@@ -18,8 +18,8 @@ fail=0
 ok() { if "$RO" --check "$@" >/dev/null 2>&1; then :; else echo "FAIL (should pass): $*"; fail=1; fi; }
 no() { if "$RO" --check "$@" >/dev/null 2>&1; then echo "FAIL (should deny): $*"; fail=1; fi; }
 
-ok aws eks describe-cluster --name X --region eu-south-2 --profile P
-ok aws ec2 describe-instance-type-offerings --profile P --filters Name=instance-type,Values=g6.xlarge
+ok aws eks describe-cluster --name X --region eu-west-1 --profile P
+ok aws ec2 describe-instance-type-offerings --profile P --filters Name=instance-type,Values=t3.micro
 ok aws sts get-caller-identity --profile P
 ok aws s3 ls --profile P
 ok aws ssm get-parameter --name /x --profile P
