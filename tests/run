@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Run every test script: tests/*.sh and modules/*/tests/*.sh. Same run as the CI.
+# Usage: tests/run [pattern]   (pattern filters by path, e.g. tests/run denylist)
+set -uo pipefail
+cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)" || exit 2
+
+failed=() n=0
+for t in tests/*.sh modules/*/tests/*.sh; do
+  [ -f "$t" ] || continue
+  case "$t" in *"${1-}"*) ;; *) continue ;; esac
+  n=$((n + 1)); start=$SECONDS
+  if out="$(bash "$t" 2>&1)"; then
+    printf 'ok    %-48s %3ss\n' "$t" "$((SECONDS - start))"
+  else
+    printf 'FAIL  %-48s %3ss\n' "$t" "$((SECONDS - start))"
+    printf '%s\n' "$out" | tail -n 30 | sed 's/^/      /'
+    failed+=("$t")
+  fi
+done
+
+[ "$n" -gt 0 ] || { echo "run: no test matches '${1-}'" >&2; exit 2; }
+if [ "${#failed[@]}" = 0 ]; then echo "run: $n test scripts passed"; else echo "run: ${#failed[@]} of $n failed: ${failed[*]}" >&2; exit 1; fi

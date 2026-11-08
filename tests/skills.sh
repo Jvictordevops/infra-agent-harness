@@ -16,9 +16,11 @@ for f in "$ROOT"/skills/*/SKILL.md; do
   [ "$name" = "$dir" ] || ko "$dir: name '$name' != folder"
   awk 'NR>1 && /^---$/ {exit} /^description: *"?.{20,}/ {found=1} END {exit !found}' "$f" || ko "$dir: description missing or too short"
   grep -nE 'IAH_HOME|infra-agent-harness/bin' "$f" && ko "$dir: IAH_HOME or harness path (use the bare command name)"
+  # shellcheck disable=SC2088  # looks for a literal "~/" in the skill text
   grep -nE '~/code/|/Users/' "$f" && ko "$dir: private path (the private names are in your denylist)"
   # the frontmatter description may carry Spanish trigger phrases (repositories in language=es use them)
-  grep -v '^description:' "$f" | grep -nE '[áéíóúñ¿¡]| (el|la|los|las|del|para|que|con|una?) ' | head -3 | grep . && ko "$dir: Spanish text left"
+  # alternation, not a [áé…] class: in a non-UTF-8 locale a class matches single bytes of → · …
+  grep -v '^description:' "$f" | grep -nE '(á|é|í|ó|ú|ñ|¿|¡)| (el|la|los|las|del|para|que|con|una?) ' | head -3 | grep . && ko "$dir: Spanish text left"
 done
 [ "$n" -gt 0 ] || ko "no skills found"
 

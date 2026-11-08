@@ -28,6 +28,7 @@ fi
 printf '%s\n' "$CMD" | awk '{ gsub(/&&|\|\||[;|&()`]|\$\(/, "\n"); print }' | {
   set -f
   while IFS= read -r seg; do
+    # shellcheck disable=SC2086  # split the segment into words on purpose (globbing is off)
     set -- $seg
     while [ $# -gt 0 ]; do # drop env assignments and wrappers to reach the real command
       case "$1" in

@@ -50,6 +50,7 @@ lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 check_path() { # $1 path; REMOTE=1 -> textual checks only (the other machine resolves it)
   local p="$1" r root ok=1 IFS
   case "$p" in *..*) deny "path with '..': $p" ;; esac
+  # shellcheck disable=SC2088  # matches a literal "~/" typed by the agent
   case "$p" in "~/"*) p="$HOME/${p#\~/}" ;; "~") p="$HOME" ;; esac
   r="$p"
   if [ "${REMOTE-0}" = 0 ]; then
@@ -132,6 +133,7 @@ check_helm() {
 }
 
 check_git() {
+  # shellcheck disable=SC2015  # deny exits, so this is if-then
   [ "${1-}" = -C ] && [ -n "${2-}" ] || deny "git: use 'git -C <dir> <subcommand> …'"
   check_path "$2"
   local sub="${3-}" a
@@ -243,6 +245,7 @@ run() { # $@ = tool args… (already validated)
   shift
   local a args=()
   for a in "$@"; do # '~/…' arrives quoted (no shell expands it): expand it as check_path did
+    # shellcheck disable=SC2088  # matches a literal "~/" typed by the agent
     case "$a" in "~/"*) args+=("$HOME/${a#\~/}") ;; *) args+=("$a") ;; esac
   done
   set -- ${args[@]+"${args[@]}"}

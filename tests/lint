@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Lint every tracked shell script with shellcheck. Same check as the CI.
+# Shell scripts = *.sh files and files whose first line is a bash/sh shebang.
+# locale/*.sh are data read line by line, never executed, so they are left out.
+# Usage: tests/lint
+set -uo pipefail
+cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)" || exit 2
+command -v shellcheck >/dev/null || { echo "lint: shellcheck is not installed" >&2; exit 2; }
+
+files=()
+while IFS= read -r f; do
+  case "$f" in locale/*.sh) continue ;; esac
+  [ -f "$f" ] || continue
+  case "$f" in
+    *.sh) files+=("$f") ;;
+    *) head -n1 -- "$f" 2>/dev/null | grep -qE '^#!.*\b(ba)?sh\b' && files+=("$f") ;;
+  esac
+done < <(git ls-files)
+
+if shellcheck -x -- "${files[@]}"; then
+  echo "lint: clean (${#files[@]} scripts, $(shellcheck --version | sed -n 's/^version: //p'))"
+else
+  echo "lint: shellcheck found problems" >&2; exit 1
+fi

@@ -100,9 +100,10 @@ openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "pass:$pw" -in "$A" | zst
 printf '#!/bin/sh\ncat "%s/clipboard"\n' "$T" > "$T/paste"; printf '#!/bin/sh\ncat > "%s/clipboard"\n' "$T" > "$T/copy"; chmod +x "$T/paste" "$T/copy"
 export CLIP_PASTE_CMD="$T/paste" CLIP_COPY_CMD="$T/copy"
 printf 'hello ñ €' > "$T/clipboard"
-"$CLIP" push | grep -q "sent 9 characters" && ok "clip push (server)" || ko "clip push"
+s='hello ñ €'; n=${#s}   # 9 in a UTF-8 locale, 12 (bytes) in the C locale: count like clip does
+"$CLIP" push | grep -q "sent $n characters" && ok "clip push (server)" || ko "clip push"
 printf 'x' > "$T/clipboard"
-"$CLIP" pull | grep -q "9 characters" && [ "$(cat "$T/clipboard")" = 'hello ñ €' ] && ok "clip pull (server)" || ko "clip pull"
+"$CLIP" pull | grep -q "$n characters" && [ "$(cat "$T/clipboard")" = 'hello ñ €' ] && ok "clip pull (server)" || ko "clip pull"
 "$CLIP" pull >/dev/null 2>&1 && ko "second pull should find the slot empty" || ok "clip pull empties the slot"
 printf 'remote text' > "$T/clipboard"
 "$CLIP" --remote push | grep -q "sent 11 characters" && ok "clip --remote push (file backend)" || ko "remote push"
