@@ -48,7 +48,22 @@ Full detail and more diagrams: [docs/architecture.md](docs/architecture.md).
 - **Modules** (`modules/`): `evidence` (shared evidence store, encrypted archives), `two-machine` (architect and executor on two machines).
 - **Tools**: `bin/doctor` (checks a machine, fixes what is safe), `bin/denylist-scan` (used by this repo's own contributor hook).
 
-## Quick start (manual install, today)
+## Quick start
+
+### As a Claude Code plugin (new, main path)
+
+This repo is also its own plugin marketplace. The plugin packaging is new and lightly tested; the manual install below still works and is the fallback.
+
+```bash
+claude plugin marketplace add Jvictordevops/infra-agent-harness
+claude plugin install infra-agent-harness@infra-agent-harness
+```
+
+- The plugin provides the skills and puts `bin/` (`check-work`, `new-work`, `ro`, `link-harness`...) on the PATH of the agent's Bash tool. A `SessionStart` hook keeps `~/.local/share/infra-agent-harness/current` pointing at the installed version.
+- Then, once, from your work repo (see the manual steps 2 and 3 below to create it), run `link-harness` from a terminal: it merges the permissions and guard hooks, links `GLOBAL.md`, sets the repo's git hooks and handles Copilot. Plugin commands are only on the agent's PATH, so from a terminal use the plugin directory, for example `~/.local/share/infra-agent-harness/current/bin/link-harness` (the link exists after the first Claude Code session with the plugin).
+- For development, add your clone instead: `claude plugin marketplace add <path to your clone>` (the plugin loads in place).
+
+### Manual install
 
 Needs `git`, `jq` and `gitleaks`. The commit hook blocks commits when `gitleaks` is missing.
 

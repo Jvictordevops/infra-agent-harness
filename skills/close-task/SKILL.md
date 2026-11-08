@@ -1,9 +1,9 @@
 ---
 name: close-task
-description: "Use when the user wants to save or close a session: \"save progress\", \"let's wrap up\", \"note this down\", \"document what we did\", end of session. Persists progress, findings and decisions to the work README and RECORD/ (or the context knowledge base) and validates with bin/check-work. Micro mode (default) or --full (Claude Code only)."
+description: "Use when the user wants to save or close a session: \"save progress\", \"let's wrap up\", \"note this down\", \"document what we did\", end of session. Persists progress, findings and decisions to the work README and RECORD/ (or the context knowledge base) and validates with check-work. Micro mode (default) or --full (Claude Code only)."
 ---
 
-The repository that holds your works is `$IAH_REPO`, else the current git repository; the harness is at `$IAH_HOME` (default `~/infra-agent-harness`). Below, `bin/…` means `"${IAH_HOME:-$HOME/infra-agent-harness}/bin/…"`.
+The repository that holds your works is `$IAH_REPO`, else the current git repository. The harness commands (`check-work`, `render-template`) are on the PATH through the plugin `bin/`.
 
 ## Usage
 
@@ -28,13 +28,13 @@ No signals → reply "Nothing to persist; session closed cleanly."
 
 ## Where each type goes
 
-A work is a folder `work/<context>/<id>/` with a `README.md`. Record skeletons come from `bin/render-template record` and `bin/render-template decision`: they are in the repository language (`.harness.conf`), so keep their field names and headings as generated (`<Task>`, `<Open>`, `<Confidence>` below stand for them).
+A work is a folder `work/<context>/<id>/` with a `README.md`. Record skeletons come from `render-template record` and `render-template decision`: they are in the repository language (`.harness.conf`), so keep their field names and headings as generated (`<Task>`, `<Open>`, `<Confidence>` below stand for them).
 
-- `decision` → a new record in the work's `RECORD/`, `YYYY-MM-DD.decision-<slug>.done.md`, from `bin/render-template decision TITLE="<title>"`: the `**<Task>:** <id> <short name>` line (decisions are tasks, "Decide …") · context · options (each with a bold name and `→ chosen/rejected: reason`, never letters or numbers) · decision · consequences · `## <Open>` · `<Confidence>:`. **Only if it applies to other works**, also one line in `contexts/<context>/decisions.md` linking the record. Without a work → append to `contexts/<context>/decisions.md`.
+- `decision` → a new record in the work's `RECORD/`, `YYYY-MM-DD.decision-<slug>.done.md`, from `render-template decision TITLE="<title>"`: the `**<Task>:** <id> <short name>` line (decisions are tasks, "Decide …") · context · options (each with a bold name and `→ chosen/rejected: reason`, never letters or numbers) · decision · consequences · `## <Open>` · `<Confidence>:`. **Only if it applies to other works**, also one line in `contexts/<context>/decisions.md` linking the record. Without a work → append to `contexts/<context>/decisions.md`.
 - `incident` → create `contexts/<context>/POSTMORTEM-YYYY-MM-DD-<slug>.md`.
 - `pattern` → append to `contexts/<context>/patterns.md`.
 - `feedback` → the memory of the agent tool you run in. Never in the repository.
-- `finding` → one new record per finding in the work's `RECORD/`: `YYYY-MM-DD.<slug>.done.md` (or `.WIP.md` if still open), from `bin/render-template record TITLE="<title that states something>"`. Keep the `**<Task>:**` line only if it belongs to a ROADMAP task; facts only if verified, linked to `evidence/`; `## <Open>` is mandatory.
+- `finding` → one new record per finding in the work's `RECORD/`: `YYYY-MM-DD.<slug>.done.md` (or `.WIP.md` if still open), from `render-template record TITLE="<title that states something>"`. Keep the `**<Task>:**` line only if it belongs to a ROADMAP task; facts only if verified, linked to `evidence/`; `## <Open>` is mandatory.
 - `progress` → in the work `README.md`, update `Status`, `In progress` and `Next steps` (the next 3-5 open items of the current `ROADMAP/` revision, as `- **<id>** <short name>`) and the frontmatter `updated:`. In the current ROADMAP, strike what is done, without `[~]` (`- ~~**1.3.4** …~~ → [record]`), and remove it from `In progress`; unfinished tasks keep `[~]` after their id and stay in `In progress`. New tasks get the next id of their objective (never reuse or renumber). Never `#id`: in prose, id + short name at the first mention.
 
 Knowledge base entries (`decisions.md`, `patterns.md`) use this shape:
@@ -66,8 +66,8 @@ After persisting a `progress` or `finding`, draft a short comment (bullets: what
 Before any commit, on every work you touched:
 
 ```bash
-bin/check-work --changed work/<context>/<id>
-bin/check-work work/<context>/<id>
+check-work --changed work/<context>/<id>
+check-work work/<context>/<id>
 ```
 
 - `--changed` also compares the working tree with HEAD (no `git add` needed): append-only `RECORD/`, banners and hints for new records. The second run checks the whole work (structure, frontmatter, numbering).

@@ -17,7 +17,7 @@ description: "Hypothesis-first troubleshooting protocol with a mandatory confide
    - **Low:** unconfirmed hypothesis. State the uncertainty and propose the cheapest check.
 5. **Forbidden:** hiding uncertainty behind confident answers, or proposing fixes without evidence.
 
-In read-only mode, every cloud, cluster or remote command goes through `bin/ro`.
+In read-only mode, every cloud, cluster or remote command goes through `ro`.
 
 ## Answer format
 

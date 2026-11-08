@@ -1,0 +1,12 @@
+{
+  "name": "infra-agent-harness",
+  "owner": { "name": "Jvictordevops" },
+  "metadata": { "description": "Marketplace of the infra-agent-harness plugin: guards and traceable work for AI agents on real infrastructure." },
+  "plugins": [
+    {
+      "name": "infra-agent-harness",
+      "source": "./",
+      "description": "A safe-by-default harness for AI coding agents that work on real infrastructure, with traceable work."
+    }
+  ]
+}

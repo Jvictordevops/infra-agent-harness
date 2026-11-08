@@ -33,3 +33,19 @@ conf_modules() {
   else m=""; fi
   printf '%s\n' "$m" | tr ',' '\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' | grep -v '^$' || true
 }
+
+# plugin_mode -> exit 0 when the harness is installed as a Claude Code plugin on this machine
+# (~/.claude/plugins/installed_plugins.json mentions "infra-agent-harness@"). IAH_PLUGIN=1|0 overrides.
+plugin_mode() {
+  local f="$HOME/.claude/plugins/installed_plugins.json"
+  case "${IAH_PLUGIN:-}" in 1) return 0 ;; 0) return 1 ;; esac
+  [ -f "$f" ] || return 1
+  if command -v jq >/dev/null 2>&1; then
+    jq -e 'tostring | contains("infra-agent-harness@")' "$f" >/dev/null 2>&1
+  else
+    grep -q 'infra-agent-harness@' "$f"
+  fi
+}
+
+# stable_link -> path of the symlink that always points at the installed plugin (see hooks/stable-link)
+stable_link() { printf '%s' "${IAH_STABLE_LINK:-$HOME/.local/share/infra-agent-harness/current}"; }

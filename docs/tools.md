@@ -6,7 +6,8 @@ Generic notes for the agent tools the harness installs into (Claude Code, Claude
 
 - `GLOBAL.md` (root of the consumer repo, copied from `templates/GLOBAL.md`) = the always-loaded global instructions. `~/.claude/CLAUDE.md` and `~/.copilot/copilot-instructions.md` are symlinks to it.
 - `AGENTS.md` and `CLAUDE.md` in the repo root = 3-line pointers to `GLOBAL.md`, both copied from `templates/root-pointer.md`. They are pointers, not copies, so the tool does not load the same text twice (global + repo) when the working directory is the repo.
-- Skills: source in `skills/<name>/` of the harness, symlinked from `~/.claude/skills/<name>`. `~/.copilot/skills` points to `~/.claude/skills` (or, if it is a real folder, gets one link per skill).
+- Skills in Claude Code, plugin install: the plugin provides `skills/<name>/` and puts its `bin/` on the PATH of the Bash tool (skills call `check-work`, `new-work`, `ro`... by bare name). A `SessionStart` hook keeps `~/.local/share/infra-agent-harness/current` pointing at the installed plugin. `link-harness` then only does permissions, `GLOBAL.md`, git hooks and Copilot.
+- Skills, manual install: source in `skills/<name>/` of the harness, symlinked from `~/.claude/skills/<name>`. `~/.copilot/skills` points to `~/.claude/skills` (or, if it is a real folder, gets one link per skill). Plugin mode is detected from `~/.claude/plugins/installed_plugins.json`; `IAH_PLUGIN=1|0` overrides.
 - Path-specific instructions: `instructions/*.instructions.md` and `<repo>/.github/instructions/*.instructions.md`.
 - `bin/link-harness` installs all of this. It is idempotent, backs up a real file before replacing it with a link, and never removes your own settings. The `post-merge` and `post-rewrite` git hooks re-run it after every pull or rebase.
 

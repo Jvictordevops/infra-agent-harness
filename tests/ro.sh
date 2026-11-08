@@ -99,6 +99,11 @@ hok "ssh other uname"                              # mode off: does nothing
 hok "bin/ro --host other kubectl get pods --context dev | jq ."
 hok "~/infra-agent-harness/bin/ro aws eks list-clusters --profile P --query 'clusters[] | [0]'"
 hok "git -C ~/infra-agent-harness status && grep -rn helm README.md"
+hok "ro --host other kubectl get pods --context dev | jq ."          # bare name (plugin bin/ on PATH)
+hok "ro aws eks list-clusters --profile P"
+hok "\"\${CLAUDE_PLUGIN_ROOT}/bin/ro\" aws sts get-caller-identity --profile P"
+hno "ro aws eks list-clusters --profile P; kubectl delete ns x"
+hno "ro mode off"
 hno "ssh other uname"
 hno "ssh -o BatchMode=yes other 'kubectl delete pod x'"
 hno "AWS_PROFILE=x aws s3 rm s3://a --recursive"

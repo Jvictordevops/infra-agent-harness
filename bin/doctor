@@ -26,10 +26,23 @@ else
   ok "harness at $HARNESS (not a git checkout)"
 fi
 
+# 1b. Plugin mode and stable link
+sl="$(stable_link)"
+if plugin_mode; then
+  ok "plugin mode: on (installed_plugins.json / IAH_PLUGIN)"
+  if [ -L "$sl" ] && [ -d "$sl/bin/hooks" ]; then ok "stable link $sl -> $(readlink "$sl")"
+  elif [ -L "$sl" ]; then warn "stable link $sl points to $(readlink "$sl"), which has no bin/hooks (start a Claude Code session to refresh it)"
+  else warn "stable link $sl missing (the SessionStart hook creates it when Claude Code starts a session)"; fi
+else
+  ok "plugin mode: off (manual install)"
+fi
+
 # 2. Repository with your works (optional)
 if [ -n "$REPO" ] && [ "$REPO" != "$HARNESS" ]; then
-  hp="$(git -C "$REPO" config core.hooksPath || true)"
+  hp="$(git -C "$REPO" config core.hooksPath || true)"; sl="$(stable_link)"
   if [ "$hp" = "$HARNESS/bin/hooks" ]; then ok "repo $REPO: hooksPath -> harness bin/hooks"
+  elif [ "$hp" = "$sl/bin/hooks" ]; then ok "repo $REPO: hooksPath -> stable link bin/hooks ($sl)"
+  elif [ -z "$hp" ] && plugin_mode; then git -C "$REPO" config core.hooksPath "$sl/bin/hooks" && ok "repo $REPO: hooksPath set to $sl/bin/hooks (was missing)"
   elif [ -z "$hp" ]; then git -C "$REPO" config core.hooksPath "$HARNESS/bin/hooks" && ok "repo $REPO: hooksPath set to $HARNESS/bin/hooks (was missing)"
   else warn "repo $REPO: hooksPath is '$hp', not $HARNESS/bin/hooks (left as is)"; fi
   vocab_load "$REPO" 2>/dev/null; ok "repo $REPO: record language '$VOC_LANG' (.harness.conf)"

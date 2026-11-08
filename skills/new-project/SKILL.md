@@ -1,10 +1,10 @@
 ---
 name: new-project
-description: "Use when the user starts a new work: \"start a project / troubleshooting / investigation / poc on X\", \"open a new work\", \"new incident\". Creates work/<context>/<date>.<slug>/ with bin/new-work and fills Goal, Objectives, Constraints and the first tasks. Usage: /new-project [context] [type] [slug]"
+description: "Use when the user starts a new work: \"start a project / troubleshooting / investigation / poc on X\", \"open a new work\", \"new incident\". Creates work/<context>/<date>.<slug>/ with new-work and fills Goal, Objectives, Constraints and the first tasks. Usage: /new-project [context] [type] [slug]"
 argument-hint: "[context] [prj|inc|inv|poc] [slug]"
 ---
 
-Creates a work folder in the repository that holds your works (`$IAH_REPO`, else the current git repository). Never create the folder or README by hand: the script produces the format. The harness is at `$IAH_HOME` (default `~/infra-agent-harness`).
+Creates a work folder in the repository that holds your works (`$IAH_REPO`, else the current git repository). Never create the folder or README by hand: the script produces the format. The harness commands (`new-work`, `check-work`) are on the PATH through the plugin `bin/`.
 
 ## 1. Gather inputs (ask only what is missing, one question at a time)
 
@@ -24,7 +24,7 @@ Before creating, check duplicates: glob `work/*/*<keyword>*/README.md`. If a mat
 ## 2. Create
 
 ```bash
-"${IAH_HOME:-$HOME/infra-agent-harness}/bin/new-work" <context> <type> <slug> [--title "<human title>"] [--date YYYY-MM-DD]
+new-work <context> <type> <slug> [--title "<human title>"] [--date YYYY-MM-DD]
 ```
 
 If it fails, show the error and fix the input (do not bypass the script).
@@ -50,7 +50,7 @@ Do not touch anything else and do not create other files in the work root.
 ## 4. Validate and report
 
 ```bash
-"${IAH_HOME:-$HOME/infra-agent-harness}/bin/check-work" work/<context>/<id>
+check-work work/<context>/<id>
 ```
 
 It must exit 0. Fix any `ERROR` in the README/ROADMAP and repeat.
