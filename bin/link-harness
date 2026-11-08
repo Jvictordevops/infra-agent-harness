@@ -12,6 +12,9 @@
 #     any other custom hooksPath is left alone with a warning.
 #   - GLOBAL.md of the work repo (if present) -> ~/.claude/CLAUDE.md and ~/.copilot/copilot-instructions.md
 #     (work repo: $IAH_REPO, else the git repository of the current directory)
+#   - denylist= of the work repo's .harness.conf (path relative to the repo; IAH_DENYLIST overrides) ->
+#     ~/.config/infra-agent-harness/denylist.txt becomes a symlink to that file, which bin/denylist-scan reads. A
+#     different link or a regular file is backed up (with a warning) first; unset key or missing file: nothing.
 #   - hooks/settings.base.json -> merged into ~/.claude/settings.json (guards + deny/ask rules). Plugin mode: only
 #     deny/ask (the plugin's hooks/hooks.json registers the guards); stable-link guard entries of older runs are removed.
 #   - optional modules active for the repository (.harness.conf "modules=a,b", IAH_MODULES overrides):
@@ -86,6 +89,26 @@ skills() { for d in "$ROOT"/skills/*/; do [ -d "$d" ] && basename "$d"; done; }
 if [ -n "$WORK" ] && [ -f "$WORK/GLOBAL.md" ]; then
   link "$WORK/GLOBAL.md" "$HOME/.claude/CLAUDE.md"
   link "$WORK/GLOBAL.md" "$HOME/.copilot/copilot-instructions.md"
+fi
+# Private denylist: ~/.config/infra-agent-harness/denylist.txt -> the file named by denylist= (the default
+# path of bin/denylist-scan). Never links the path to itself (IAH_DENYLIST may name it).
+DL="$(conf_denylist "$WORK")"
+DL_LINK="$HOME/.config/infra-agent-harness/denylist.txt"
+if [ -n "$DL" ] && [ "$DL" != "$DL_LINK" ]; then
+  if [ ! -f "$DL" ]; then
+    echo "link-harness: warning: denylist file $DL does not exist; $DL_LINK not linked" >&2
+  else
+    DL="$(cd "$(dirname "$DL")" && pwd)/$(basename "$DL")"
+    if [ -L "$DL_LINK" ] && [ "$(readlink "$DL_LINK")" = "$DL" ]; then :
+    elif [ -L "$DL_LINK" ] || [ -e "$DL_LINK" ]; then
+      echo "link-harness: warning: $DL_LINK is not a link to $DL; backing it up and replacing it" >&2
+      if [ "$DRY_RUN" = 1 ]; then would "back up $DL_LINK and link it -> $DL"
+      else
+        mv "$DL_LINK" "$DL_LINK.bak-$(date +%Y%m%d%H%M%S)"; say "backed up $DL_LINK"
+        ln -s "$DL" "$DL_LINK"; say "linked $DL_LINK"
+      fi
+    else link "$DL" "$DL_LINK"; fi
+  fi
 fi
 KEPT=" "   # skill names whose ~/.claude/skills/<n> link was kept because it is not this harness's
 if plugin_mode; then
@@ -224,13 +247,17 @@ merge_settings() {
 }
 merge_settings
 
-# Optional modules: sourced, so they can use say/link and the variables above (MODULE_DIR is theirs)
+# Optional modules: sourced, so they can use say/link and the variables above (MODULE_DIR is theirs).
+# MODULE_LINK_DIR is the path to write into links and files outside the harness: in plugin mode it goes through
+# the stable link, because the versioned plugin cache dir is deleted after an update.
 for m in $(conf_modules "$WORK"); do
   if [[ ! "$m" =~ ^[a-z0-9-]+$ ]] || [ ! -d "$ROOT/modules/$m" ]; then
     echo "link-harness: warning: unknown module '$m' (no modules/$m/)" >&2; continue
   fi
   if [ -f "$ROOT/modules/$m/link.sh" ]; then
     MODULE_DIR="$ROOT/modules/$m"
+    # shellcheck disable=SC2034  # read by the sourced modules/<m>/link.sh
+    if plugin_mode; then MODULE_LINK_DIR="$(stable_link)/modules/$m"; else MODULE_LINK_DIR="$MODULE_DIR"; fi
     # shellcheck source=/dev/null
     . "$MODULE_DIR/link.sh"
   fi

@@ -43,6 +43,10 @@ check "link-harness + evidence: cpush linked to the module" '[ "$(readlink "$HOM
 check "link-harness + evidence: cpull linked"           '[ "$(readlink "$HOME/.local/bin/cpull")" = "$ROOT/modules/evidence/bin/clip" ]'
 out2="$(IAH_MODULES=evidence run_link)"
 check "link-harness + evidence: second run is quiet about links" '! grep -q "linked .*cpush" <<<"$out2"'
+# plugin mode: links go through the stable link, never the versioned plugin cache dir
+out="$(IAH_PLUGIN=1 IAH_STABLE_LINK="$TMP/stable" IAH_MODULES=evidence run_link)"
+check "link-harness plugin + evidence: cpush via the stable link" '[ "$(readlink "$HOME/.local/bin/cpush")" = "$TMP/stable/modules/evidence/bin/clip" ]'
+check "link-harness plugin + evidence: cpull via the stable link" '[ "$(readlink "$HOME/.local/bin/cpull")" = "$TMP/stable/modules/evidence/bin/clip" ]'
 out="$(IAH_MODULES=nope run_link)"
 check "link-harness: unknown module warns"              'grep -q "unknown module .nope." <<<"$out"'
 check "link-harness: unknown module is not fatal"       '(cd "$TMP" && IAH_MODULES=nope "$ROOT/bin/link-harness" --quiet >/dev/null 2>&1)'

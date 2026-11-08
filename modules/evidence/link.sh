@@ -1,11 +1,11 @@
 # shellcheck shell=bash
 # Evidence module: install step. Sourced by bin/link-harness when "modules=evidence" is active; uses its
-# say/link helpers and MODULE_DIR. Must not exit.
+# say/link helpers, MODULE_DIR and MODULE_LINK_DIR (the path to write into links: stable link in plugin mode). Must not exit.
 #   - cpush / cpull -> bin/clip in ~/.local/bin
 #   - WSL only: cpush.cmd / cpull.cmd for Windows terminals (LINK_HARNESS_WINDOWS=0 skips this)
 
-link "$MODULE_DIR/bin/clip" "$HOME/.local/bin/cpush"
-link "$MODULE_DIR/bin/clip" "$HOME/.local/bin/cpull"
+link "$MODULE_LINK_DIR/bin/clip" "$HOME/.local/bin/cpush"
+link "$MODULE_LINK_DIR/bin/clip" "$HOME/.local/bin/cpull"
 if [ "${DRY_RUN:-0}" = 1 ]; then :   # dry run: only the links above are simulated
 elif [ "$(uname)" = "Darwin" ] && ! grep -qs 'HOME/.local/bin' "$HOME/.zshrc"; then
   # shellcheck disable=SC2016
@@ -20,7 +20,7 @@ if [ "${DRY_RUN:-0}" != 1 ] && [ "${LINK_HARNESS_WINDOWS:-1}" = 1 ] && { [ -n "$
     # clip.exe already exists in Windows, hence the names cpush / cpull
     ev_wb="$(wslpath "$ev_winprof")/bin"; mkdir -p "$ev_wb"
     for ev_c in cpush cpull; do
-      printf '@echo off\r\nwsl.exe --cd ~ --exec bash -ic "%s %s %%*"\r\n' "$MODULE_DIR/bin/clip" "${ev_c#c}" > "$ev_wb/$ev_c.cmd.new"
+      printf '@echo off\r\nwsl.exe --cd ~ --exec bash -ic "%s %s %%*"\r\n' "$MODULE_LINK_DIR/bin/clip" "${ev_c#c}" > "$ev_wb/$ev_c.cmd.new"
       if cmp -s "$ev_wb/$ev_c.cmd.new" "$ev_wb/$ev_c.cmd"; then rm -f "$ev_wb/$ev_c.cmd.new"
       else mv "$ev_wb/$ev_c.cmd.new" "$ev_wb/$ev_c.cmd"; say "wrote $ev_winprof\\bin\\$ev_c.cmd"; fi
     done
