@@ -6,6 +6,8 @@
 set -uo pipefail
 
 MOD="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=../../../tests/lib/portable.sh
+. "$MOD/../../tests/lib/portable.sh"   # grep_q
 TMP="$(cd "$(mktemp -d)" && pwd -P)"   # physical path: macOS temp dirs sit behind the /var -> /private/var link
 trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP/home"; mkdir -p "$HOME"
@@ -29,9 +31,9 @@ for bad in "Bad" "a_b" "../x" "a/b" "a.b" "" "sp ace"; do
 done
 check "nothing written outside the secrets dir" '[ ! -e "$HOME/.config/infra-agent-harness/x" ] && [ ! -e "$TMP/x" ]'
 check "lock is not supported (exit 3)"         '"$FILE" lock >/dev/null 2>&1; [ $? = 3 ]'
-check "status names the dir"                   '"$FILE" status | grep -q "secrets"'
+check "status names the dir"                   '"$FILE" status | grep_q "secrets"'
 check "unknown action: usage, exit 2"          '"$FILE" nope >/dev/null 2>&1; [ $? = 2 ]'
-check "secrets never in status output"        '! "$FILE" status | grep -q new'
+check "secrets never in status output"        '! "$FILE" status | grep_q new'
 
 # --- bitwarden backend -----------------------------------------------------------------
 check "bitwarden.sh: bash -n"                  'bash -n "$BW"'
@@ -42,6 +44,6 @@ check "bitwarden get without bw fails cleanly" 'out="$(PATH="$NOBW" "$BW" get so
 check "bitwarden put without bw fails cleanly" 'out="$(printf x | PATH="$NOBW" "$BW" put some-key 2>&1)"; rc=$?; [ "$rc" = 1 ] && grep -q "not installed" <<<"$out"'
 check "bitwarden rejects bad names"            '! PATH="$NOBW" "$BW" get "../x" >/dev/null 2>&1'
 check "bitwarden lock without bw: no error"    'PATH="$NOBW" "$BW" lock >/dev/null 2>&1'
-check "bitwarden status without bw: no error"  'PATH="$NOBW" "$BW" status | grep -q "not installed"'
+check "bitwarden status without bw: no error"  'PATH="$NOBW" "$BW" status | grep_q "not installed"'
 
 if [ "$fail" = 0 ]; then echo "evidence backends: all tests passed"; else echo "evidence backends: tests FAILED"; exit 1; fi

@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Helpers so the tests run the same on Linux (GNU tools) and macOS (BSD tools, bash 3.2).
+# Helpers so the tests run the same, and reliably, on Linux (GNU tools) and macOS (BSD tools, bash 3.2).
 #   . "$ROOT/tests/lib/portable.sh"
 
 # sed_i <sed args...> <file>: in-place edit (GNU and BSD sed disagree on -i)
@@ -27,3 +27,7 @@ snap() {
     find . -type f -exec sh -c 'for f; do if command -v sha256sum >/dev/null; then sha256sum "$f"; else shasum -a 256 "$f"; fi; done' sh {} + | LC_ALL=C sort
   )
 }
+
+# grep_q <grep args...>: "grep -q" that reads all its input first. Under pipefail, "cmd | grep -q" fails at
+# random: grep exits on the first match and cmd dies of SIGPIPE (141) if it is still writing.
+grep_q() { local in; in="$(cat)"; grep -q "$@" <<<"$in"; }

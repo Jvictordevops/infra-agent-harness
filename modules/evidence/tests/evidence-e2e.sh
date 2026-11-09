@@ -6,6 +6,8 @@
 # shellcheck disable=SC2015
 set -euo pipefail
 MOD="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=../../../tests/lib/portable.sh
+. "$MOD/../../tests/lib/portable.sh"   # grep_q
 HARNESS="$(cd "$MOD/../.." && pwd)"
 T="$(cd "$(mktemp -d)" && pwd -P)"   # physical path: macOS temp dirs sit behind the /var -> /private/var link; SRV_PID=""
 cleanup() { [ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null; rm -rf "$T"; }
@@ -29,7 +31,7 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 
 cp "$T/conf/server.crt" "$T/conf/token" "$CLI/"; echo "https://localhost:$PORT" > "$CLI/url"
 CLIP_CONF="$T/conf" CLIP_DATA="$T/data" CLIP_BIND=127.0.0.1 CLIP_PORT="$PORT" python3 "$MOD/server/server.py" 2>/dev/null &
 SRV_PID=$!
-for _ in $(seq 20); do curl -s --cacert "$CLI/server.crt" "https://localhost:$PORT/health" | grep -q ok && break; sleep 0.3; done
+for _ in $(seq 20); do curl -s --cacert "$CLI/server.crt" "https://localhost:$PORT/health" | grep_q ok && break; sleep 0.3; done
 printf 'server_host=localhost\nserver_port=%s\narchive_dir=%s\n' "$PORT" "$T/archive" > "$CONF/evidence.conf"
 export EVIDENCE_KEY="$T/key"
 
@@ -42,28 +44,28 @@ W="$(ls -d work/global/*.evidence-store-e2e)"; ok "new-work $W"
 "$EV" init "$W" >/dev/null && grep -q '^evidence_store: localhost$' "$W/README.md" && ok "init: evidence_store: <server_host>" || ko "init"
 "$HARNESS/bin/check-work" "$W" >/dev/null && ok "check-work accepts the work" || ko "check-work"
 mkdir -p "$W/evidence/2026-11-02.cpu" && echo '{"cpu_p95": 87, "nota": "ñ €"}' > "$W/evidence/2026-11-02.cpu/data.json"
-"$EV" sync "$W" | grep -q "1 uploaded" && ok "A uploads its folder" || ko "A upload"
+"$EV" sync "$W" | grep_q "1 uploaded" && ok "A uploads its folder" || ko "A upload"
 
 mkdir -p "$T/b/$W"; cp "$W/README.md" "$T/b/$W/"; cd "$T/b"        # machine B, after a git pull
-"$EV" sync "$W" | grep -q "1 downloaded" && ok "B downloads it" || ko "B download"
+"$EV" sync "$W" | grep_q "1 downloaded" && ok "B downloads it" || ko "B download"
 cmp -s "$T/a/$W/evidence/2026-11-02.cpu/data.json" "$W/evidence/2026-11-02.cpu/data.json" && ok "identical content (ñ €)" || ko "content"
 mkdir -p "$W/evidence/2026-11-02.mem" && head -c 2000000 /dev/urandom | base64 > "$W/evidence/2026-11-02.mem/big.txt"
-"$EV" sync "$W" | grep -q "1 uploaded" && ok "B uploads a 2.7 MB folder" || ko "B upload"
-cd "$T/a"; "$EV" sync "$W" | grep -q "1 downloaded" && cmp -s "$T/b/$W/evidence/2026-11-02.mem/big.txt" "$W/evidence/2026-11-02.mem/big.txt" \
+"$EV" sync "$W" | grep_q "1 uploaded" && ok "B uploads a 2.7 MB folder" || ko "B upload"
+cd "$T/a"; "$EV" sync "$W" | grep_q "1 downloaded" && cmp -s "$T/b/$W/evidence/2026-11-02.mem/big.txt" "$W/evidence/2026-11-02.mem/big.txt" \
   && ok "A receives it intact" || ko "A sync"
-"$EV" sync "$W" | grep -q "0 uploaded, 0 downloaded" && ok "second sync: nothing to do" || ko "idempotent"
+"$EV" sync "$W" | grep_q "0 uploaded, 0 downloaded" && ok "second sync: nothing to do" || ko "idempotent"
 
 cp "$CLI/url" "$T/url.on"; echo "https://localhost:1" > "$CLI/url"
-"$EV" sync "$W" | grep -q "pending" && ok "store unreachable: pending, no error" || ko "offline"
+"$EV" sync "$W" | grep_q "pending" && ok "store unreachable: pending, no error" || ko "offline"
 cp "$T/url.on" "$CLI/url"
 [ "$(curl -s -o /dev/null -w '%{http_code}' --cacert "$CLI/server.crt" "https://localhost:$PORT/ev/global.$(basename "$W")/")" = 401 ] \
   && ok "store refuses requests without token" || ko "auth"
 
 # Key backup / restore through the file backend (default)
-"$EV" key-backup | grep -q "backed up" && ok "key-backup" || ko "key-backup"
+"$EV" key-backup | grep_q "backed up" && ok "key-backup" || ko "key-backup"
 S="$CONF/secrets/evidence-key"
 [ "$(stat -c %a "$S" 2>/dev/null || stat -f %Lp "$S")" = 600 ] && ok "backup file is 600" || ko "backup permissions"
-"$EV" key-backup | grep -q "already backed up" && ok "key-backup again: nothing to do" || ko "key-backup idempotent"
+"$EV" key-backup | grep_q "already backed up" && ok "key-backup again: nothing to do" || ko "key-backup idempotent"
 
 "$EV" archive "$W" >/dev/null && A="$(ls "$T"/archive/*.enc)" && ok "archive $(basename "$A")" || ko "archive"
 [ "$(head -c 8 "$A")" = "Salted__" ] && ok "archive is encrypted" || ko "archive in clear"
@@ -71,7 +73,7 @@ S="$CONF/secrets/evidence-key"
 [ -z "$(ls "$W/evidence")" ] && ok "deleted locally on A" || ko "A local not empty"
 grep -q '^evidence_archive: ' "$W/README.md" && ok "README: evidence_archive" || ko "frontmatter"
 cp "$W/README.md" "$T/b/$W/README.md"; cd "$T/b"
-"$EV" sync "$W" | grep -q "local copy kept" && [ -f "$W/evidence/2026-11-02.mem/big.txt" ] && ok "B keeps its copy after the close" || ko "B keeps copy"
+"$EV" sync "$W" | grep_q "local copy kept" && [ -f "$W/evidence/2026-11-02.mem/big.txt" ] && ok "B keeps its copy after the close" || ko "B keeps copy"
 "$EV" restore "$A" "$T/r2" >/dev/null && grep -q '"cpu_p95": 87' "$T/r2/evidence/2026-11-02.cpu/data.json" && ok "restore with the key" || ko "restore"
 
 # A machine that only has the backup: restore the key from it, then open the archive
@@ -86,14 +88,14 @@ good="$(sha256sum "$T/key" 2>/dev/null || shasum -a 256 "$T/key")"; good="${good
 echo "key_fingerprint=000000000000" >> "$CONF/evidence.conf"
 "$EV" key-restore 2>/dev/null && ko "wrong fingerprint accepted" || { [ ! -e "$T/key2" ] && ok "wrong fingerprint: restore refused, no key kept" || ko "key kept"; }
 echo "key_fingerprint=$good" >> "$CONF/evidence.conf"
-"$EV" key-restore | grep -q "fingerprint matches" && ok "right fingerprint accepted" || ko "fingerprint"
+"$EV" key-restore | grep_q "fingerprint matches" && ok "right fingerprint accepted" || ko "fingerprint"
 
 # Compatibility: an archive built with the plain openssl pipeline (as the tool always did) opens, and vice versa
 pw="$(sha256sum "$T/key" 2>/dev/null || shasum -a 256 "$T/key")"; pw="${pw:0:64}"
 mkdir -p "$T/c/evidence/2026-11-03.x" && echo compat > "$T/c/evidence/2026-11-03.x/f.txt"
 tar -C "$T/c" -cf - evidence | zstd -q -19 -T0 -c | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "pass:$pw" -out "$T/plain.enc"
 "$EV" restore "$T/plain.enc" "$T/r4" >/dev/null && [ "$(cat "$T/r4/evidence/2026-11-03.x/f.txt")" = compat ] && ok "archive made with plain openssl opens" || ko "compat (openssl -> tool)"
-# Listing captured first: with pipefail, "tar -t | grep -q" fails with SIGPIPE when grep exits before tar is done
+# Listing captured first: with pipefail, "tar -t | grep_q" fails with SIGPIPE when grep exits before tar is done
 listing="$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "pass:$pw" -in "$A" | zstd -dc | tar -tf -)" || listing=""
 grep -q 'data.json' <<<"$listing" \
   && ok "archive made by the tool opens with plain openssl" || ko "compat (tool -> openssl)"
@@ -103,13 +105,13 @@ printf '#!/bin/sh\ncat "%s/clipboard"\n' "$T" > "$T/paste"; printf '#!/bin/sh\nc
 export CLIP_PASTE_CMD="$T/paste" CLIP_COPY_CMD="$T/copy"
 printf 'hello ñ €' > "$T/clipboard"
 s='hello ñ €'; n=${#s}   # 9 in a UTF-8 locale, 12 (bytes) in the C locale: count like clip does
-"$CLIP" push | grep -q "sent $n characters" && ok "clip push (server)" || ko "clip push"
+"$CLIP" push | grep_q "sent $n characters" && ok "clip push (server)" || ko "clip push"
 printf 'x' > "$T/clipboard"
-"$CLIP" pull | grep -q "$n characters" && [ "$(cat "$T/clipboard")" = 'hello ñ €' ] && ok "clip pull (server)" || ko "clip pull"
+"$CLIP" pull | grep_q "$n characters" && [ "$(cat "$T/clipboard")" = 'hello ñ €' ] && ok "clip pull (server)" || ko "clip pull"
 "$CLIP" pull >/dev/null 2>&1 && ko "second pull should find the slot empty" || ok "clip pull empties the slot"
 printf 'remote text' > "$T/clipboard"
-"$CLIP" --remote push | grep -q "sent 11 characters" && ok "clip --remote push (file backend)" || ko "remote push"
+"$CLIP" --remote push | grep_q "sent 11 characters" && ok "clip --remote push (file backend)" || ko "remote push"
 printf 'x' > "$T/clipboard"
-"$CLIP" --remote pull | grep -q "11 characters" && [ "$(cat "$T/clipboard")" = 'remote text' ] && ok "clip --remote pull" || ko "remote pull"
+"$CLIP" --remote pull | grep_q "11 characters" && [ "$(cat "$T/clipboard")" = 'remote text' ] && ok "clip --remote pull" || ko "remote pull"
 "$CLIP" --remote pull >/dev/null 2>&1 && ko "second remote pull should be empty" || ok "clip --remote pull empties the secret"
 echo "ALL TESTS PASSED"
