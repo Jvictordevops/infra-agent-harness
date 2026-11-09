@@ -45,7 +45,12 @@ Generic notes for the agent tools the harness installs into (Claude Code, Claude
   - every profile keeps the floor: the `deny` rules and the guards of every pack, the credential locks, the decision log and the secret scan;
   - `standard` (default) adds the `ask` rules: Claude Code asks you before `terraform`/`tofu`/`terragrunt apply`, `kubectl apply`, `helm install|upgrade`, `git push --force` and `git reset --hard`;
   - `permissive` drops the `ask` rules of the packs, so the platform ones run without asking; the git ones stay. `bin/link-harness` removes them from `~/.claude/settings.json` and lists each one: any identical rule goes, even one you wrote yourself. Going back to `standard` (`set standard`, then `link-harness`) adds them again. `bin/doctor` warns if `settings.json` still has them;
-  - `strict` behaves as `standard` for now (sandbox planned); `isolated` comes with the container (v0.2).
+  - `strict` is `standard` plus the native sandbox of Claude Code around Bash commands. `bin/link-harness` turns it on in `~/.claude/settings.json` with `failIfUnavailable` (Claude Code does not start without it) and no retry outside it, and adds:
+    - the domains of the core (GitHub) and of the chosen packs (`packs/<name>/domains`); Claude Code asks you about any other domain;
+    - `ro` outside the sandbox: it is the read-only gate and reads the cloud credentials itself. The cloud CLIs called directly run inside, without credentials, so under `strict` the agent reaches the cloud only through `ro` (you run `terraform plan`; `init`, `validate` and `fmt` work inside);
+    - every credential file denied inside it, the third lock: it also stops a script that opens `.env` by itself.
+  - Going back to another profile takes all that back (exact matches, named one by one) and keeps your own sandbox entries. On Linux and WSL2 it needs `bubblewrap` and `socat`: `security-profile set strict` refuses without them and `bin/doctor` fails. Limits on Linux: a credential file is denied only if it exists when the command starts, and `**/.env` only under the session's working directory;
+  - `isolated` comes with the container (v0.2).
 - **Credential files:** in every profile and mode, `credential-guard` (PreToolUse on Bash, Read and Grep) blocks reading, copying or sending a credential file (`cat ~/.aws/credentials`, `cp ~/.kube/config /tmp`, `curl -T ~/.netrc …`, the Read tool on `.env`); using it passes (`ssh -i`, `--kubeconfig`, `source .env`). `bin/link-harness` also adds one `Read(…)` deny rule per file. Lists, exceptions and limits: `packs/README.md`, "Credential files".
 - **Sub-agents:** the brief and the prompt say "only `bin/ro`". The hook applies to them too, because they share the session.
 

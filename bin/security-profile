@@ -41,6 +41,13 @@ set_profile() {
     isolated) die "'isolated' comes with the container (v0.2); choose permissive, standard or strict" ;;
     *) die "unknown profile '$p' (permissive, standard, strict)" ;;
   esac
+  # strict turns the sandbox on with failIfUnavailable: on Linux, without bubblewrap and socat Claude Code would
+  # not start. macOS has its sandbox built in. IAH_SANDBOX_TOOLS replaces the list in tests.
+  if [ "$p" = strict ] && [ "$(uname -s)" = Linux ]; then
+    for n in ${IAH_SANDBOX_TOOLS:-bwrap socat}; do
+      command -v "$n" >/dev/null 2>&1 || die "strict needs '$n' for the sandbox (Claude Code would not start without it): sudo apt-get install bubblewrap socat"
+    done
+  fi
   packs="$(profile_raw packs)"
   while [ $# -gt 0 ]; do
     case "$1" in

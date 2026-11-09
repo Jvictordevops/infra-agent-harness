@@ -156,4 +156,49 @@ prun --quiet >/dev/null
 check "$nopack" "plugin mode, permissive: ask rules of the packs left in settings.json"
 rm -f "$IAH_PROFILE_FILE"
 
+# 10. Sandbox: strict turns it on with the core and chosen-pack domains, ro outside it and every credential file
+#     denied inside it; a pack not chosen takes its domains back; standard takes back what strict added (named)
+#     and keeps the user's own sandbox entries.
+lh() { IAH_PLUGIN=0 HOME="$TMP" LINK_HARNESS_WINDOWS=0 "$ROOT/bin/link-harness" "$@" 2>&1; }
+has() { grep -qF "$1" <<<"$out" || { echo "FAIL: $2"; fail=1; }; }
+jq '.sandbox = {"network": {"allowedDomains": ["pypi.org"]}, "excludedCommands": ["docker compose *"]}' "$S" > "$TMP/s.json" && mv "$TMP/s.json" "$S"
+printf 'profile=strict\n' > "$IAH_PROFILE_FILE"
+cp "$S" "$TMP/settings.before"
+out="$(lh --dry-run)"
+cmp -s "$S" "$TMP/settings.before" || { echo "FAIL: strict --dry-run changed settings.json"; fail=1; }
+has "would: enable the sandbox (security profile strict)" "strict --dry-run does not say it would enable the sandbox"
+sleep 1; out="$(lh)"
+has "enabling the sandbox (security profile strict)" "strict does not say it enables the sandbox"
+ncred="$(bash -c '. "$1/bin/lib/packs.sh"; . "$1/bin/lib/profile.sh"; packs_sandbox "$1" strict' _ "$ROOT" | jq '.creds | length')"
+[ "$(grep -c 'sandbox (security profile strict)' <<<"$out")" = 1 ] || { echo "FAIL: strict names the sandbox more than once: $out"; fail=1; }
+has "enabling the sandbox (security profile strict): 6 allowed domain(s), $ncred credential file(s) denied inside it, outside it: docker compose *, ro *, bin/ro *" "strict: the sandbox message does not count domains, files and commands"
+check '.sandbox.enabled == true and .sandbox.failIfUnavailable == true and .sandbox.allowUnsandboxedCommands == false' "strict: sandbox on, failIfUnavailable, no unsandboxed retry"
+check '.sandbox.excludedCommands | index(["ro *"]) and index(["bin/ro *"]) and index(["docker compose *"])' "strict: ro outside the sandbox, the user's command kept"
+check '.sandbox.network.allowedDomains | index(["github.com"]) and index(["registry.terraform.io"]) and index(["pypi.org"])' "strict: core, pack and user domains"
+check '.sandbox.network | has("strictAllowlist") | not' "strict: domains not listed must be asked about (no strictAllowlist)"
+check '.sandbox.credentials.files | index([{"path": "~/.aws/credentials", "mode": "deny"}]) and index([{"path": "**/.env", "mode": "deny"}]) and index([{"path": "~/.ssh/id_ed25519", "mode": "deny"}])' "strict: credential files denied inside the sandbox"
+check '[.sandbox.credentials.files[].path] | all(startswith("/") | not)' "strict: an absolute credential path (the Linux sandbox skips a leading glob)"
+before="$(cat "$S")"; out="$(lh)"
+[ "$(cat "$S")" = "$before" ] || { echo "FAIL: strict second run changed the file"; fail=1; }
+! grep -q "sandbox" <<<"$out" || { echo "FAIL: strict second run names sandbox changes"; fail=1; }
+printf 'profile=strict\npacks=aws\n' > "$IAH_PROFILE_FILE"
+out="$(lh)"
+has "removing allowed domain registry.terraform.io from the sandbox (its pack is not chosen)" "strict, packs=aws: the terraform domains not named"
+check '.sandbox.network.allowedDomains | (index(["registry.terraform.io"]) | not) and index(["github.com"]) and index(["pypi.org"])' "strict, packs=aws: terraform domains left, or core/user ones lost"
+check '.sandbox.credentials.files | index([{"path": "~/.terraformrc", "mode": "deny"}])' "strict, packs=aws: credential files of a pack not chosen dropped (they are the floor)"
+printf 'profile=standard\n' > "$IAH_PROFILE_FILE"
+sleep 1; out="$(lh)"
+has "disabling the sandbox (security profile standard" "standard does not say it disables the sandbox"
+has "removing ro * from the commands outside the sandbox (security profile standard)" "standard does not name the commands it takes back"
+check '.sandbox | (has("enabled") or has("failIfUnavailable") or has("allowUnsandboxedCommands") or has("credentials")) | not' "standard: strict flags or credential files left"
+check '.sandbox.network.allowedDomains == ["pypi.org"] and .sandbox.excludedCommands == ["docker compose *"]' "standard: the user's sandbox entries lost, or harness entries left"
+jq 'del(.sandbox)' "$S" > "$TMP/s.json" && mv "$TMP/s.json" "$S"
+printf 'profile=strict\n' > "$IAH_PROFILE_FILE"; lh >/dev/null
+printf 'profile=permissive\n' > "$IAH_PROFILE_FILE"; lh >/dev/null
+check 'has("sandbox") | not' "permissive: an empty sandbox block left behind"
+printf 'profile=strict\n' > "$IAH_PROFILE_FILE"
+prun --quiet >/dev/null
+check '.sandbox.enabled == true and (.sandbox.excludedCommands | index(["ro *"]))' "plugin mode, strict: sandbox not merged"
+rm -f "$IAH_PROFILE_FILE"
+
 if [ "$fail" = 0 ]; then echo "link-harness settings: all tests passed"; else echo "link-harness settings: tests FAILED"; exit 1; fi

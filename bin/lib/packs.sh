@@ -7,8 +7,9 @@
 #                                  # + Read(…) deny rules for the credential files (hooks/lib/credentials.sh)
 #   packs_profile_permissions "$harness" "$profile"   # the same for one security profile, plus "drop": the ask
 #                                  # rules settings.json must not have (permissive: the asks of the packs)
+#   packs_sandbox "$harness" "$profile"   # the sandbox block of the strict profile (needs bin/lib/profile.sh)
 #
-# Needs jq for packs_permissions.
+# Needs jq for packs_permissions and packs_sandbox.
 
 packs_names() {
   local d
@@ -48,4 +49,44 @@ packs_profile_permissions() { # $1 harness, $2 profile name (profile_name)
     | if $p == "permissive" then (.ask - $core) as $pack | {deny, ask: (.ask - $pack), drop: $pack}
       else {deny, ask, drop: []} end
   ' <<<"$all"
+}
+
+_packs_lines() { # files -> their lines without comments, blank lines and trailing spaces (missing files skipped)
+  local f line
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    while IFS= read -r line || [ -n "$line" ]; do
+      line="${line%%[[:space:]]#*}"; line="${line%"${line##*[![:space:]]}"}"
+      case "$line" in ''|'#'*) continue ;; esac
+      printf '%s\n' "$line"
+    done < "$f"
+  done
+}
+
+# The sandbox of the strict profile (decision "ro fuera del sandbox, Preguntar, Tercera cerradura"), as
+# {"strict": bool, "excluded": […], "domains": […], "all_domains": […], "creds": [{path, mode}…]}:
+#   excluded     commands that run outside the sandbox: core .sandbox.excludedCommands (ro, the read-only gate,
+#                reads the cloud credentials itself)
+#   domains      allowed domains: core .sandbox.network.allowedDomains + packs/<chosen>/domains
+#   all_domains  the same with every installed pack: what link-harness takes back for the packs not chosen
+#   creds        one deny entry per credential pattern of the core and every pack, chosen or not (the floor).
+#                '~/<path>' as is; '**/<name>' relative, so Claude Code anchors it at the session's working
+#                directory (an absolute '/**/<name>' starts with a glob, which the Linux sandbox skips).
+# A domain not listed is asked about (no strictAllowlist: decision "Preguntar").
+packs_sandbox() { # $1 harness, $2 profile name (profile_name)
+  local h="$1" n chosen all creds
+  chosen="$(profile_packs "$h" | while IFS= read -r n; do _packs_lines "$h/packs/$n/domains"; done | jq -R . | jq -sc .)" || return 1
+  all="$(packs_names "$h" | while IFS= read -r n; do _packs_lines "$h/packs/$n/domains"; done | jq -R . | jq -sc .)" || return 1
+  # shellcheck source=hooks/lib/credentials.sh
+  . "$h/hooks/lib/credentials.sh"
+  creds="$(cred_patterns "$h" | jq -R '{path: ., mode: "deny"}' | jq -sc .)" || return 1
+  jq -c --arg p "$2" --argjson chosen "$chosen" --argjson all "$all" --argjson creds "$creds" '
+    def uniq_keep: reduce .[] as $x ([]; if index([$x]) then . else . + [$x] end);
+    (.sandbox // {}) as $c
+    | {strict: ($p == "strict"),
+       excluded: (($c.excludedCommands // []) | uniq_keep),
+       domains: ([($c.network.allowedDomains // [])[], $chosen[]] | uniq_keep),
+       all_domains: ([($c.network.allowedDomains // [])[], $all[]] | uniq_keep),
+       creds: ($creds | uniq_keep)}
+  ' "$h/hooks/settings.base.json"
 }

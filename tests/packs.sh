@@ -41,6 +41,13 @@ for d in "$ROOT"/packs/*/; do
       [[ "$r" =~ ^(~/|\*\*/)[^[:space:]]+$ ]] || ko "$p: credential-files: not '~/<path>' or '**/<name>': $r"
     done < "$d/credential-files"
   fi
+  if [ -f "$d/domains" ]; then
+    while IFS= read -r r || [ -n "$r" ]; do
+      r="${r%%[[:space:]]#*}"; r="${r%"${r##*[![:space:]]}"}"
+      case "$r" in ''|'#'*) continue ;; esac
+      [[ "$r" =~ ^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(:[0-9]+)?$ ]] || ko "$p: domains: not 'host', '*.domain' or 'host:port': $r"
+    done < "$d/domains"
+  fi
   if [ -f "$d/credential-readers" ]; then
     while IFS= read -r r || [ -n "$r" ]; do
       case "$r" in ''|'#'*) continue ;; esac

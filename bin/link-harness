@@ -194,15 +194,68 @@ fi
 # SECURITY PROFILE (bin/lib/profile.sh): permissive removes the ask rules of the packs (exact matches, also one
 # the user wrote by hand) and lists each one; going back to standard or strict adds them again. Deny rules and
 # the core asks (git) are the same in every profile.
+# SANDBOX (bin/lib/packs.sh packs_sandbox): strict turns the sandbox on (failIfUnavailable, no unsandboxed
+# retry), adds the commands that run outside it, the domains of the core and the chosen packs (and takes back
+# those of the packs not chosen) and denies every credential file inside it. Any other profile takes back what
+# strict adds, by exact match, also a value the user wrote by hand (enabled: true included), and names it; the
+# user's own domains, commands and files stay. Same in plugin mode and manual install.
+# shellcheck disable=SC2016  # a jq program: its $ are jq's
+SANDBOX_JQ='
+  def prune(p): if (getpath(p) // null) == [] or (getpath(p) // null) == {} then delpaths([p]) else . end;
+  if $sb.strict then
+    .sandbox.enabled = true | .sandbox.failIfUnavailable = true | .sandbox.allowUnsandboxedCommands = false
+    | .sandbox.excludedCommands = ((.sandbox.excludedCommands // []) as $e | $e + ($sb.excluded - $e))
+    | .sandbox.network.allowedDomains = (((.sandbox.network.allowedDomains // []) - ($sb.all_domains - $sb.domains)) as $d
+                                         | $d + ($sb.domains - $d))
+    | .sandbox.credentials.files = ((.sandbox.credentials.files // []) as $f | $f + ($sb.creds - $f))
+  elif (.sandbox | type) == "object" then
+    (if .sandbox.enabled == true then del(.sandbox.enabled) else . end)
+    | (if .sandbox.failIfUnavailable == true then del(.sandbox.failIfUnavailable) else . end)
+    | (if .sandbox.allowUnsandboxedCommands == false then del(.sandbox.allowUnsandboxedCommands) else . end)
+    | (if .sandbox.excludedCommands then .sandbox.excludedCommands -= $sb.excluded else . end)
+    | (if .sandbox.network.allowedDomains then .sandbox.network.allowedDomains -= $sb.all_domains else . end)
+    | (if .sandbox.credentials.files then .sandbox.credentials.files -= $sb.creds else . end)
+    | prune(["sandbox", "excludedCommands"]) | prune(["sandbox", "network", "allowedDomains"])
+    | prune(["sandbox", "network"]) | prune(["sandbox", "credentials", "files"]) | prune(["sandbox", "credentials"])
+    | prune(["sandbox"])
+  else . end'
+
+# Names what the sandbox merge changes: $1 settings before, $2 settings after (JSON text), $3 profile, $4 packs_sandbox
+sandbox_messages() {
+  local kind v
+  while IFS=$'\t' read -r kind v; do
+    case "$kind" in
+      on) v="enable the sandbox (security profile $3): $v" ;;
+      off) v="disable the sandbox (security profile $3: the sandbox comes with strict)" ;;
+      domain) v="remove allowed domain $v from the sandbox ($([ "$(jq -r .strict <<<"$4")" = true ] && echo 'its pack is not chosen' || echo "security profile $3"))" ;;
+      excluded) v="remove $v from the commands outside the sandbox (security profile $3)" ;;
+      creds) v="remove $v credential file(s) from the sandbox deny list (security profile $3)" ;;
+      *) continue ;;
+    esac
+    if [ "$DRY_RUN" = 1 ]; then would "$v"
+    else v="${v/#enable /enabling }"; v="${v/#disable /disabling }"; say "${v/#remove /removing }"; fi
+  done < <(jq -r --argjson n "$2" '
+    (.sandbox // {}) as $o | ($n.sandbox // {}) as $w
+    | (if ($o.enabled != true) and ($w.enabled == true) then
+         "on\t\(($w.network.allowedDomains // []) | length) allowed domain(s), \(($w.credentials.files // []) | length) credential file(s) denied inside it, outside it: \(($w.excludedCommands // []) | join(", "))"
+       else empty end),
+      (if ($o.enabled == true) and ($w.enabled != true) then "off\t" else empty end),
+      ((($o.network.allowedDomains // []) - ($w.network.allowedDomains // []))[] | "domain\t" + .),
+      ((($o.excludedCommands // []) - ($w.excludedCommands // []))[] | "excluded\t" + .),
+      ((($o.credentials.files // []) - ($w.credentials.files // [])) | length | select(. > 0) | "creds\t" + tostring)
+  ' "$1" 2>/dev/null || true)
+}
+
 merge_settings() {
   local base="$ROOT/hooks/settings.base.json" dst="$HOME/.claude/settings.json" new fresh=0 hroot="$ROOT" src
-  local plug=0 drop='[]' c perms prof r
+  local plug=0 drop='[]' c perms prof r sb
   # Plugin mode: $ROOT is the versioned cache directory, deleted some days after an update. Hook commands
   # (manual mode only) and the entries to remove use the stable link.
   if plugin_mode; then plug=1; hroot="$(stable_link)"; fi
   command -v jq >/dev/null || { say "jq missing: settings not merged"; return 0; }
   prof="$(profile_name)"
   perms="$(packs_profile_permissions "$ROOT" "$prof")" || { say "cannot read the deny/ask rules of the core and packs: settings not merged"; return 0; }
+  sb="$(packs_sandbox "$ROOT" "$prof")" || { say "cannot read the sandbox of the core and packs: settings not merged"; return 0; }
   src="$dst"
   if [ ! -s "$dst" ]; then
     fresh=1
@@ -247,6 +300,8 @@ merge_settings() {
             end)
       end
   ' "$src")" || { say "cannot parse $dst: settings not merged"; [ "$src" = "$dst" ] || rm -f "$src"; return 0; }
+  new="$(jq --argjson sb "$sb" "$SANDBOX_JQ" <<<"$new")" || { say "cannot merge the sandbox block: settings not merged"; [ "$src" = "$dst" ] || rm -f "$src"; return 0; }
+  sandbox_messages "$src" "$new" "$prof" "$sb"
   if [ "$new" != "$(jq . "$src")" ]; then
     if [ "$DRY_RUN" = 1 ]; then
       if [ "$plug" = 1 ]; then would "merge permissions of hooks/settings.base.json into $dst"

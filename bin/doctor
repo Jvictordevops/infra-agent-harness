@@ -122,6 +122,26 @@ missing="$(jq -r --argjson b "$pperms" '(($b.deny + $b.ask) - ((.permissions.den
 [ "$missing" = 0 ] && ok "deny/ask rules of the core and packs ($packs) present" || warn "$missing deny/ask rule(s) of the core and packs ($packs) missing (bin/link-harness)"
 extra="$(jq -r --argjson b "$pperms" '[(.permissions.ask // [])[] | select(. as $r | $b.drop | index([$r]))] | length' "$cs" 2>/dev/null || echo '?')"
 [ "$extra" = 0 ] || warn "$extra ask rule(s) of the packs still in settings.json; security profile $pprof removes them (bin/link-harness)"
+# Sandbox of the strict profile (packs_sandbox): on, complete and with its Linux tools under strict; off otherwise
+psb="$(packs_sandbox "$HARNESS" "$pprof" 2>/dev/null || echo null)"
+sbstate="$(jq -r --argjson sb "$psb" '
+  (.sandbox // {}) as $s
+  | if $sb.strict then
+      [ (if $s.enabled != true then "off" else empty end),
+        ((($sb.domains + $sb.excluded) - (($s.network.allowedDomains // []) + ($s.excludedCommands // []))) | length
+          | select(. > 0) | "\(.) domain(s) or outside command(s) missing"),
+        (($sb.creds - ($s.credentials.files // [])) | length | select(. > 0) | "\(.) credential file(s) missing") ]
+      | join(", ")
+    elif $s.enabled == true and (($s.excludedCommands // []) | index($sb.excluded[0:1])) then "left"
+    else "" end' "$cs" 2>/dev/null || echo '?')"
+if [ "$pprof" = strict ]; then
+  [ -z "$sbstate" ] && ok "sandbox of the strict profile on in settings.json" || warn "sandbox of the strict profile: $sbstate (bin/link-harness)"
+  if [ "$(uname -s)" = Linux ]; then
+    for t in ${IAH_SANDBOX_TOOLS:-bwrap socat}; do
+      command -v "$t" >/dev/null 2>&1 || fail "strict needs '$t' for the sandbox; Claude Code will not start without it (failIfUnavailable): sudo apt-get install bubblewrap socat"
+    done
+  fi
+elif [ "$sbstate" = left ]; then warn "the sandbox of strict is still on in settings.json; security profile $pprof turns it off (bin/link-harness)"; fi
 [ -x "$HARNESS/bin/hooks/commit-msg" ] && ok "commit-msg hook present" || fail "bin/hooks/commit-msg missing or not executable"
 tlog="$(mktemp)"
 for t in tests/block-destructive.sh tests/commit-msg.sh tests/credential-guard.sh tests/floor.sh tests/packs.sh tests/profile.sh tests/ro.sh "$HARNESS"/packs/*/tests.sh; do

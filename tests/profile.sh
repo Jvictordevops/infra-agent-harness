@@ -7,6 +7,7 @@ TMP="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$TMP"' EXIT
 export IAH_HOOK_LOG="$TMP/hook-decisions.jsonl" RO_MODE_FILE="$TMP/ro-mode" RO_ROOTS="$TMP" IAH_PROFILE_FILE="$TMP/profile"
 unset RO_PROFILES RO_CONTEXTS
+export IAH_SANDBOX_TOOLS=sh   # 'set strict' checks the sandbox tools on Linux; the runners need not have bwrap
 # shellcheck source=bin/lib/packs.sh
 . "$ROOT/bin/lib/packs.sh"
 # shellcheck source=bin/lib/profile.sh
@@ -51,6 +52,11 @@ case "$out" in *"profile: standard"*"missing: defaults"*) ;; *) ko "show without
 eq "set strict" "$(profile_name)" strict
 "$SP" set strict --packs aws,kubernetes >/dev/null 2>&1 || ko "set --packs fails"
 eq "set --packs" "$(chosen)" "aws kubernetes"
+if [ "$(uname -s)" = Linux ]; then
+  out="$(IAH_SANDBOX_TOOLS="sh no-such-tool-iah" "$SP" set strict --packs aws 2>&1)" && ko "set strict without a sandbox tool works"
+  case "$out" in *"strict needs 'no-such-tool-iah'"*"apt-get install bubblewrap socat"*) ;; *) ko "set strict without a sandbox tool: $out" ;; esac
+  eq "set strict refused: packs unchanged" "$(chosen)" "aws kubernetes"
+fi
 "$SP" set standard >/dev/null 2>&1 || ko "set standard fails"
 eq "set keeps packs" "$(chosen)" "aws kubernetes"
 eq "set keeps packs: profile" "$(profile_name)" standard

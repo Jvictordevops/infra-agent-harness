@@ -1,5 +1,5 @@
 {
-  "_comment": "Core base merged into ~/.claude/settings.json by bin/link-harness (union), together with packs/*/permissions.json. Manual install: permissions + hooks, __ROOT__ = this repo. Plugin mode: only permissions (hooks/hooks.json registers the guards). Platform deny/ask rules live in the packs; here only the core ones: deny = editing the security profile and the read-only mode file (only the user changes them; ro-guard covers Bash), ask = git force push and hard reset (confirm and show the exact command). bin/link-harness adds to deny one Read(…) rule per credential file (hooks/credential-guard/credential-files, packs/*/credential-files).",
+  "_comment": "Core base merged into ~/.claude/settings.json by bin/link-harness (union), together with packs/*/permissions.json. Manual install: permissions + hooks, __ROOT__ = this repo. Plugin mode: only permissions (hooks/hooks.json registers the guards). Platform deny/ask rules live in the packs; here only the core ones: deny = editing the security profile and the read-only mode file (only the user changes them; ro-guard covers Bash), ask = git force push and hard reset (confirm and show the exact command). bin/link-harness adds to deny one Read(…) rule per credential file (hooks/credential-guard/credential-files, packs/*/credential-files). sandbox = the core part of the sandbox of the strict profile only (bin/lib/packs.sh packs_sandbox): commands that run outside it (ro, the read-only gate, reads the cloud credentials itself) and the domains every pack needs (GitHub); the packs add their domains and every credential file is denied inside it.",
   "permissions": {
     "deny": [
       "Edit(~/.config/infra-agent-harness/profile)",
@@ -30,5 +30,11 @@
         ]
       }
     ]
+  },
+  "sandbox": {
+    "excludedCommands": ["ro *", "bin/ro *"],
+    "network": {
+      "allowedDomains": ["github.com", "api.github.com", "*.githubusercontent.com"]
+    }
   }
 }

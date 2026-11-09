@@ -64,4 +64,26 @@ out="$(doc "$ROOT")"
 ! grep -q "ask rule(s) of the packs still in settings.json" <<<"$out" || ko "standard: WARN about the ask rules of the packs"
 rm -rf "$H/.config/infra-agent-harness" "$H/.claude/settings.json"
 
+# 6. Sandbox of strict: WARN while settings.json lacks it, OK after link-harness, FAIL without its Linux tools;
+#    under standard, the sandbox of strict left on is a WARN
+mkdir -p "$H/.config/infra-agent-harness"; printf 'profile=strict\n' > "$H/.config/infra-agent-harness/profile"
+printf '{}\n' > "$H/.claude/settings.json"
+out="$(IAH_SANDBOX_TOOLS="sh" doc "$ROOT")"
+grep -qF "WARN  sandbox of the strict profile: off" <<<"$out" || ko "strict: no WARN with the sandbox off"
+(cd "$TMP" && IAH_PLUGIN=0 HOME="$H" LINK_HARNESS_WINDOWS=0 "$ROOT/bin/link-harness" --quiet >/dev/null 2>&1)
+out="$(IAH_SANDBOX_TOOLS="sh" doc "$ROOT")"
+grep -qF "OK    sandbox of the strict profile on in settings.json" <<<"$out" || ko "strict: no OK after link-harness"
+jq '.sandbox.credentials.files |= .[1:]' "$H/.claude/settings.json" > "$TMP/s.json" && mv "$TMP/s.json" "$H/.claude/settings.json"
+out="$(IAH_SANDBOX_TOOLS="sh" doc "$ROOT")"
+grep -qF "WARN  sandbox of the strict profile: 1 credential file(s) missing" <<<"$out" || ko "strict: no WARN for a credential file missing from the sandbox"
+if [ "$(uname -s)" = Linux ]; then
+  out="$(IAH_SANDBOX_TOOLS="sh no-such-tool-iah" doc "$ROOT")"
+  grep -qF "FAIL  strict needs 'no-such-tool-iah' for the sandbox" <<<"$out" || ko "strict: no FAIL without a sandbox tool"
+fi
+printf 'profile=standard\n' > "$H/.config/infra-agent-harness/profile"
+out="$(doc "$ROOT")"
+grep -qF "WARN  the sandbox of strict is still on in settings.json; security profile standard turns it off" <<<"$out" || ko "standard: no WARN with the sandbox of strict left on"
+! grep -q "sandbox of the strict profile" <<<"$out" || ko "standard: strict sandbox checks shown"
+rm -rf "$H/.config/infra-agent-harness" "$H/.claude/settings.json"
+
 if [ "$fail" = 0 ]; then echo "doctor plugin hooks: all tests passed"; else echo "doctor plugin hooks: tests FAILED"; exit 1; fi

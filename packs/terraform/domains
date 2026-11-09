@@ -1,0 +1,5 @@
+# Domains the sandbox of the strict profile allows when this pack is chosen (packs/README.md). One per line;
+# '*.example.com' matches its subdomains. Checked in the sandbox: terraform init downloads providers.
+# checkpoint-api.hashicorp.com (version check) is left out: init works without it.
+registry.terraform.io
+releases.hashicorp.com
