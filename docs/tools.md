@@ -49,7 +49,13 @@ Generic notes for the agent tools the harness installs into (Claude Code, Claude
     - the domains of the core (GitHub) and of the chosen packs (`packs/<name>/domains`); Claude Code asks you about any other domain;
     - `ro` outside the sandbox: it is the read-only gate and reads the cloud credentials itself. The cloud CLIs called directly run inside, without credentials, so under `strict` the agent reaches the cloud only through `ro` (you run `terraform plan`; `init`, `validate` and `fmt` work inside);
     - every credential file denied inside it, the third lock: it also stops a script that opens `.env` by itself.
-  - Going back to another profile takes all that back (exact matches, named one by one) and keeps your own sandbox entries. On Linux and WSL2 it needs `bubblewrap` and `socat`: `security-profile set strict` refuses without them and `bin/doctor` fails. Limits on Linux: a credential file is denied only if it exists when the command starts, and `**/.env` only under the session's working directory;
+  - Going back to another profile takes all that back (exact matches, named one by one) and keeps your own sandbox entries. On Linux and WSL2 it needs `bubblewrap` and `socat`: `security-profile set strict` refuses without them and `bin/doctor` fails. Claude Code applies the change to running sessions too;
+  - what changes in daily work (checked in WSL2):
+    - **you run git commit, push, pull and fetch**: the SSH agent is not reachable inside the sandbox, so signed commits and git over SSH fail there. The agent prepares the message (`git commit -F <file>`) and gives you the commands;
+    - `ro` runs outside the sandbox only when the command starts with it: `cd x && ro …` stays inside and fails without credentials;
+    - commands write only under the folder the session started in (and `$TMPDIR`): open the session in your work repo, not in your home directory, or the whole home is writable;
+    - a credential file is denied only if it exists when the command starts, and `**/.env` only under the session's starting folder; inside the sandbox a denied file cannot be deleted either (delete it from a terminal);
+    - in auto mode a domain not listed may be allowed without asking (seen once, `example.com`): auto mode decides instead of you;
   - `isolated` comes with the container (v0.2).
 - **Credential files:** in every profile and mode, `credential-guard` (PreToolUse on Bash, Read and Grep) blocks reading, copying or sending a credential file (`cat ~/.aws/credentials`, `cp ~/.kube/config /tmp`, `curl -T ~/.netrc …`, the Read tool on `.env`); using it passes (`ssh -i`, `--kubeconfig`, `source .env`). `bin/link-harness` also adds one `Read(…)` deny rule per file. Lists, exceptions and limits: `packs/README.md`, "Credential files".
 - **Sub-agents:** the brief and the prompt say "only `bin/ro`". The hook applies to them too, because they share the session.
