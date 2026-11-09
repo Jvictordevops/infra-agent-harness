@@ -76,6 +76,9 @@ grep -qF "OK    sandbox of the strict profile on in settings.json" <<<"$out" || 
 jq '.sandbox.credentials.files |= .[1:]' "$H/.claude/settings.json" > "$TMP/s.json" && mv "$TMP/s.json" "$H/.claude/settings.json"
 out="$(IAH_SANDBOX_TOOLS="sh" doc "$ROOT")"
 grep -qF "WARN  sandbox of the strict profile: 1 credential file(s) missing" <<<"$out" || ko "strict: no WARN for a credential file missing from the sandbox"
+jq 'del(.sandbox.network.strictAllowlist)' "$H/.claude/settings.json" > "$TMP/s.json" && mv "$TMP/s.json" "$H/.claude/settings.json"
+out="$(IAH_SANDBOX_TOOLS="sh" doc "$ROOT")"
+grep -qF "WARN  sandbox of the strict profile: domains not listed are not refused (strictAllowlist), 1 credential file(s) missing" <<<"$out" || ko "strict: no WARN without strictAllowlist"
 if [ "$(uname -s)" = Linux ]; then
   out="$(IAH_SANDBOX_TOOLS="sh no-such-tool-iah" doc "$ROOT")"
   grep -qF "FAIL  strict needs 'no-such-tool-iah' for the sandbox" <<<"$out" || ko "strict: no FAIL without a sandbox tool"

@@ -63,7 +63,8 @@ _packs_lines() { # files -> their lines without comments, blank lines and traili
   done
 }
 
-# The sandbox of the strict profile (decision "ro fuera del sandbox, Preguntar, Tercera cerradura"), as
+# The sandbox of the strict profile (decisions "ro fuera del sandbox", "Tercera cerradura" and, after the real
+# test, "Denegar sin preguntar"), as
 # {"strict": bool, "excluded": […], "domains": […], "all_domains": […], "creds": [{path, mode}…]}:
 #   excluded     commands that run outside the sandbox: core .sandbox.excludedCommands (ro, the read-only gate,
 #                reads the cloud credentials itself)
@@ -72,7 +73,8 @@ _packs_lines() { # files -> their lines without comments, blank lines and traili
 #   creds        one deny entry per credential pattern of the core and every pack, chosen or not (the floor).
 #                '~/<path>' as is; '**/<name>' relative, so Claude Code anchors it at the session's working
 #                directory (an absolute '/**/<name>' starts with a glob, which the Linux sandbox skips).
-# A domain not listed is asked about (no strictAllowlist: decision "Preguntar").
+# A domain not listed is refused in every permission mode (link-harness sets network.strictAllowlist): asking
+# was not enough, because auto mode let an unlisted domain through without asking.
 packs_sandbox() { # $1 harness, $2 profile name (profile_name)
   local h="$1" n chosen all creds
   chosen="$(profile_packs "$h" | while IFS= read -r n; do _packs_lines "$h/packs/$n/domains"; done | jq -R . | jq -sc .)" || return 1

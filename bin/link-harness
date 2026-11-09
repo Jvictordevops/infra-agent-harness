@@ -195,7 +195,8 @@ fi
 # the user wrote by hand) and lists each one; going back to standard or strict adds them again. Deny rules and
 # the core asks (git) are the same in every profile.
 # SANDBOX (bin/lib/packs.sh packs_sandbox): strict turns the sandbox on (failIfUnavailable, no unsandboxed
-# retry), adds the commands that run outside it, the domains of the core and the chosen packs (and takes back
+# retry, strictAllowlist: a domain not listed is refused), adds the commands that run outside it, the domains
+# of the core and the chosen packs (and takes back
 # those of the packs not chosen) and denies every credential file inside it. Any other profile takes back what
 # strict adds, by exact match, also a value the user wrote by hand (enabled: true included), and names it; the
 # user's own domains, commands and files stay. Same in plugin mode and manual install.
@@ -204,6 +205,7 @@ SANDBOX_JQ='
   def prune(p): if (getpath(p) // null) == [] or (getpath(p) // null) == {} then delpaths([p]) else . end;
   if $sb.strict then
     .sandbox.enabled = true | .sandbox.failIfUnavailable = true | .sandbox.allowUnsandboxedCommands = false
+    | .sandbox.network.strictAllowlist = true
     | .sandbox.excludedCommands = ((.sandbox.excludedCommands // []) as $e | $e + ($sb.excluded - $e))
     | .sandbox.network.allowedDomains = (((.sandbox.network.allowedDomains // []) - ($sb.all_domains - $sb.domains)) as $d
                                          | $d + ($sb.domains - $d))
@@ -212,6 +214,7 @@ SANDBOX_JQ='
     (if .sandbox.enabled == true then del(.sandbox.enabled) else . end)
     | (if .sandbox.failIfUnavailable == true then del(.sandbox.failIfUnavailable) else . end)
     | (if .sandbox.allowUnsandboxedCommands == false then del(.sandbox.allowUnsandboxedCommands) else . end)
+    | (if .sandbox.network.strictAllowlist == true then del(.sandbox.network.strictAllowlist) else . end)
     | (if .sandbox.excludedCommands then .sandbox.excludedCommands -= $sb.excluded else . end)
     | (if .sandbox.network.allowedDomains then .sandbox.network.allowedDomains -= $sb.all_domains else . end)
     | (if .sandbox.credentials.files then .sandbox.credentials.files -= $sb.creds else . end)

@@ -60,7 +60,7 @@ All files are optional. Any other file name is an error (`tests/packs.sh`).
 | `credential-readers` | `credential-guard` | One `<command>` or `<command> <word>` per line (a reader only when `<word>` is one of its arguments), like `hooks/credential-guard/readers`. |
 | `permissions.json` | `bin/link-harness`, `bin/doctor` | `{"deny": ["Bash(…)"], "ask": ["Bash(…)"]}`, Claude Code permission rules. They are merged into `~/.claude/settings.json` after the core ones. |
 | `tests.sh` | `tests/run`, `bin/doctor` | The pack's own tests, with the helpers of `tests/lib/pack-test.sh`: `ro_ok`/`ro_no`, `blk`/`alw`, `denied`/`asked`/`unruled`, `guarded`. |
-| `domains` | `bin/link-harness`, `bin/doctor` | Domains the sandbox of the `strict` profile allows when the pack is chosen, one per line: `host`, `*.domain` or `host:port` (`bin/lib/packs.sh` `packs_sandbox`). Only domains checked inside the sandbox; any other is asked about. |
+| `domains` | `bin/link-harness`, `bin/doctor` | Domains the sandbox of the `strict` profile allows when the pack is chosen, one per line: `host`, `*.domain` or `host:port` (`bin/lib/packs.sh` `packs_sandbox`). Only domains checked inside the sandbox; any other is refused (`strictAllowlist`). |
 | `README.md` | people | Optional notes. |
 
 Lines starting with `#` and empty lines are ignored in `guard-tools`, `destructive.rules`, `credential-files` and `credential-readers`.

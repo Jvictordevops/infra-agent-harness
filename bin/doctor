@@ -128,6 +128,7 @@ sbstate="$(jq -r --argjson sb "$psb" '
   (.sandbox // {}) as $s
   | if $sb.strict then
       [ (if $s.enabled != true then "off" else empty end),
+        (if $s.network.strictAllowlist != true then "domains not listed are not refused (strictAllowlist)" else empty end),
         ((($sb.domains + $sb.excluded) - (($s.network.allowedDomains // []) + ($s.excludedCommands // []))) | length
           | select(. > 0) | "\(.) domain(s) or outside command(s) missing"),
         (($sb.creds - ($s.credentials.files // [])) | length | select(. > 0) | "\(.) credential file(s) missing") ]

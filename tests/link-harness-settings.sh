@@ -175,7 +175,7 @@ has "enabling the sandbox (security profile strict): 6 allowed domain(s), $ncred
 check '.sandbox.enabled == true and .sandbox.failIfUnavailable == true and .sandbox.allowUnsandboxedCommands == false' "strict: sandbox on, failIfUnavailable, no unsandboxed retry"
 check '.sandbox.excludedCommands | index(["ro *"]) and index(["bin/ro *"]) and index(["docker compose *"])' "strict: ro outside the sandbox, the user's command kept"
 check '.sandbox.network.allowedDomains | index(["github.com"]) and index(["registry.terraform.io"]) and index(["pypi.org"])' "strict: core, pack and user domains"
-check '.sandbox.network | has("strictAllowlist") | not' "strict: domains not listed must be asked about (no strictAllowlist)"
+check '.sandbox.network.strictAllowlist == true' "strict: a domain not listed must be refused (strictAllowlist)"
 check '.sandbox.credentials.files | index([{"path": "~/.aws/credentials", "mode": "deny"}]) and index([{"path": "**/.env", "mode": "deny"}]) and index([{"path": "~/.ssh/id_ed25519", "mode": "deny"}])' "strict: credential files denied inside the sandbox"
 check '[.sandbox.credentials.files[].path] | all(startswith("/") | not)' "strict: an absolute credential path (the Linux sandbox skips a leading glob)"
 before="$(cat "$S")"; out="$(lh)"
@@ -191,7 +191,7 @@ sleep 1; out="$(lh)"
 has "disabling the sandbox (security profile standard" "standard does not say it disables the sandbox"
 has "removing ro * from the commands outside the sandbox (security profile standard)" "standard does not name the commands it takes back"
 check '.sandbox | (has("enabled") or has("failIfUnavailable") or has("allowUnsandboxedCommands") or has("credentials")) | not' "standard: strict flags or credential files left"
-check '.sandbox.network.allowedDomains == ["pypi.org"] and .sandbox.excludedCommands == ["docker compose *"]' "standard: the user's sandbox entries lost, or harness entries left"
+check '.sandbox.network == {"allowedDomains": ["pypi.org"]} and .sandbox.excludedCommands == ["docker compose *"]' "standard: the user's sandbox entries lost, or harness entries left (strictAllowlist included)"
 jq 'del(.sandbox)' "$S" > "$TMP/s.json" && mv "$TMP/s.json" "$S"
 printf 'profile=strict\n' > "$IAH_PROFILE_FILE"; lh >/dev/null
 printf 'profile=permissive\n' > "$IAH_PROFILE_FILE"; lh >/dev/null
