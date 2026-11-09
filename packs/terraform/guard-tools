@@ -1,0 +1,4 @@
+# Pack terraform: commands ro-guard blocks outside bin/ro in read-only mode. One name per line.
+terraform
+tofu
+terragrunt

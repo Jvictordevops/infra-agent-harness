@@ -1,0 +1,12 @@
+{
+  "deny": [
+    "Bash(kubectl delete *)",
+    "Bash(kubectl * delete *)",
+    "Bash(kubectl drain *)",
+    "Bash(kubectl * drain *)"
+  ],
+  "ask": [
+    "Bash(kubectl apply *)",
+    "Bash(kubectl * apply *)"
+  ]
+}

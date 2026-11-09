@@ -13,6 +13,8 @@ set -uo pipefail
 HARNESS="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")/.." && pwd)"
 # shellcheck source-path=SCRIPTDIR source=lib/vocab.sh
 . "$HARNESS/bin/lib/vocab.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/packs.sh
+. "$HARNESS/bin/lib/packs.sh"
 REPO="${IAH_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
 
 if [ "$(uname)" = "Darwin" ]; then MACHINE=macos; elif grep -qi microsoft /proc/version 2>/dev/null; then MACHINE=wsl; else MACHINE=linux; fi
@@ -99,11 +101,12 @@ for h in ro-guard.sh block-destructive-platform.sh; do
     ok "hook $h registered in ~/.claude/settings.json"
   else fail "hook $h not registered in ~/.claude/settings.json (bin/link-harness)"; fi
 done
-missing="$(jq -r --slurpfile b "$HARNESS/hooks/settings.base.json" '(($b[0].permissions.deny + $b[0].permissions.ask) - ((.permissions.deny // []) + (.permissions.ask // []))) | length' "$cs" 2>/dev/null || echo '?')"
-[ "$missing" = 0 ] && ok "deny/ask rules of hooks/settings.base.json present" || warn "$missing deny/ask rule(s) of hooks/settings.base.json missing (bin/link-harness)"
+packs="$(packs_names "$HARNESS" | paste -sd, -)"
+missing="$(jq -r --argjson b "$(packs_permissions "$HARNESS" 2>/dev/null || echo null)" '(($b.deny + $b.ask) - ((.permissions.deny // []) + (.permissions.ask // []))) | length' "$cs" 2>/dev/null || echo '?')"
+[ "$missing" = 0 ] && ok "deny/ask rules of the core and packs ($packs) present" || warn "$missing deny/ask rule(s) of the core and packs ($packs) missing (bin/link-harness)"
 [ -x "$HARNESS/bin/hooks/commit-msg" ] && ok "commit-msg hook present" || fail "bin/hooks/commit-msg missing or not executable"
 tlog="$(mktemp)"
-for t in block-destructive commit-msg ro; do
+for t in block-destructive commit-msg packs ro; do
   IAH_HOOK_LOG="$tlog" bash "$HARNESS/tests/$t.sh" >/dev/null 2>&1 && ok "tests/$t.sh green" || fail "tests/$t.sh failing: run it to see which case"
 done
 rm -f "$tlog"

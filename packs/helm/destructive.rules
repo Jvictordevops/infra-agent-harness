@@ -1,0 +1,3 @@
+# Pack helm: destructive commands block-destructive-platform blocks. 'name|regex' per line; placeholders in packs/README.md.
+helm-uninstall|<P>helm<G><S>(uninstall|delete|del|un)<E>
+helmfile-apply-destroy|<P>helmfile<G><S>(destroy|apply|delete)<E>

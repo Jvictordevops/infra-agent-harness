@@ -1,0 +1,9 @@
+{
+  "deny": [
+    "Bash(aws * delete-*)",
+    "Bash(aws * terminate-*)",
+    "Bash(aws s3 rb *)",
+    "Bash(aws s3 rm *)"
+  ],
+  "ask": []
+}

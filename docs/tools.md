@@ -30,7 +30,7 @@ Generic notes for the agent tools the harness installs into (Claude Code, Claude
 ## Read-only executors (`bin/ro`)
 
 - **What for:** let an executor and its sub-agents only read clouds, clusters and repos even when the cloud role is an administrator (for example an SSO admin role that is the only one available in an account). The barrier is ours, in two layers.
-- **`bin/ro`** runs a single allow-listed command with a fixed shape:
+- **`bin/ro`** runs a single allow-listed command with a fixed shape. The `aws`, `kubectl` and `helm` checks come from the packs (`packs/<name>/ro.sh`, [packs/README.md](../packs/README.md)); `git`, `gh` and the file readers are core:
   - `aws <service> <operation> … --profile P`: `describe-`, `list-`, `get-`, `batch-get-`, `lookup-`, `search-` operations and `s3 ls`.
   - `kubectl <verb> … --context C`: `get`, `describe`, `logs`, `top`, `events`, `api-resources`, `auth can-i`…
   - `helm list|status|history|get metadata … --kube-context C`.
@@ -45,10 +45,10 @@ Generic notes for the agent tools the harness installs into (Claude Code, Claude
 
 ### Hook registration
 
-- `bin/link-harness` merges `hooks/settings.base.json` into `~/.claude/settings.json` (macOS, Linux, WSL). Manual install: registers `ro-guard` and `block-destructive-platform` as PreToolUse hooks on Bash. Plugin mode: the plugin registers them, so it adds no hooks and removes the entries of this harness under the stable link that an earlier run added (they would run twice; the file is backed up first, and an entry that points to another harness is kept with a warning). In both modes it adds the `permissions.deny` / `permissions.ask` rules (destructive commands denied; force push, hard reset, `apply` and `helm install/upgrade` ask first).
+- `bin/link-harness` merges `hooks/settings.base.json` and the `permissions.json` of every pack into `~/.claude/settings.json` (macOS, Linux, WSL). Manual install: registers `ro-guard` and `block-destructive-platform` as PreToolUse hooks on Bash. Plugin mode: the plugin registers them, so it adds no hooks and removes the entries of this harness under the stable link that an earlier run added (they would run twice; the file is backed up first, and an entry that points to another harness is kept with a warning). In both modes it adds the `permissions.deny` / `permissions.ask` rules (destructive commands denied; force push, hard reset, `apply` and `helm install/upgrade` ask first).
 - It only adds: it never removes anything, skips a hook whose script is already registered, and leaves a `settings.json.bak-<date>` copy when the file changes. It needs `jq`.
 - `hooks/confidence-nudge` (UserPromptSubmit) is not in the base file; register it yourself if you want it. It adds a reminder to end troubleshooting conclusions with a confidence level.
-- `bin/doctor` checks the registration (in plugin mode: registered by the plugin's `hooks/hooks.json`; WARN if the same guard is also in `~/.claude/settings.json`) and runs the guards' tests (`tests/block-destructive.sh`, `tests/ro.sh`).
+- `bin/doctor` checks the registration (in plugin mode: registered by the plugin's `hooks/hooks.json`; WARN if the same guard is also in `~/.claude/settings.json`) and runs the guards' tests (`tests/block-destructive.sh`, `tests/packs.sh`, `tests/ro.sh`).
 
 ### Decision log
 

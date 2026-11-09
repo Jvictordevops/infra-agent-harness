@@ -9,7 +9,7 @@
 #   --check  validate only: prints "ok" or the reason, runs nothing
 #   bin/ro mode on [reason] | status     read-only mode on this machine (the hook enforces it)
 #   bin/ro mode off                      only the user, from a terminal (the hook blocks agents)
-# Tools (fixed shape, so the check is simple):
+# Tools (fixed shape, so the check is simple); aws, kubectl and helm come from packs/<name>/ro.sh:
 #   aws <service> <operation> … --profile P       describe-/list-/get-/batch-get-/lookup-/search-, s3 ls
 #   kubectl <verb> … --context C                  get, describe, logs, top, events, api-resources, auth can-i…
 #   helm <list|status|history|get metadata> … --kube-context C
@@ -23,6 +23,10 @@ set -euo pipefail
 set -f
 
 MODE="${RO_MODE_FILE:-$HOME/.config/infra-agent-harness/ro-mode}"
+# The harness root, through the ~/.local/bin/ro link and the stable link: the packs live there
+HARNESS="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")/.." && pwd)"
+CORE_TOOLS="git gh cat head tail ls find grep wc stat"
+PACK_TOOLS=""
 
 usage() { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 deny() { echo "ro: denied: $*" >&2; exit 3; }
@@ -66,70 +70,6 @@ check_path() { # $1 path; REMOTE=1 -> textual checks only (the other machine res
     */.git/config|*/.ssh|*/.ssh/*|*/.aws|*/.aws/*|*/.kube|*/.kube/*|*.tfstate|*.tfstate.*|*/.env|*/.env.*|*.pem|*.key|*kubeconfig*|*/.netrc|*/.npmrc)
       deny "sensitive path: $1" ;;
   esac
-}
-
-check_aws() {
-  local svc="${1-}" op="${2-}" p a
-  [[ "$svc" =~ ^[a-z0-9-]+$ && "$op" =~ ^[a-z0-9-]+$ ]] || deny "aws: use 'aws <service> <operation> …'"
-  p="$(opt_val --profile "$@")" || deny "aws: --profile is mandatory"
-  in_list "$p" "${RO_PROFILES-}" || deny "aws: profile $p not in RO_PROFILES ($RO_PROFILES)"
-  case "$op" in
-    *token*|*password*|*secret-value*|*credential*|*login*|*decrypt*) deny "aws: $op returns secrets or credentials" ;;
-  esac
-  case "$svc $op" in
-    "sts get-caller-identity"|"s3 ls") ;;
-    sts\ *|sso\ *|sso-oidc\ *|"s3api get-object"*|"secretsmanager get-"*) deny "aws: $svc $op not allowed" ;;
-    s3\ *) deny "aws: only 's3 ls' in s3" ;;
-    *) [[ "$op" =~ ^(describe|list|get|batch-get|lookup|search)- ]] || [ "$op" = filter-log-events ] \
-         || deny "aws: $op is not read-only (describe-/list-/get-/batch-get-/lookup-/search-)" ;;
-  esac
-  for a in "$@"; do
-    case "$a" in --with-decryption|--endpoint-url|--endpoint-url=*|--debug) deny "aws: $a not allowed" ;; esac
-  done
-}
-
-is_secret_res() { # $1 kubectl arg -> 0 if it names Secrets
-  local t IFS=',/'
-  for t in $1; do
-    case "$(lower "$t")" in secret|secrets|secret.*|secrets.*) return 0 ;; esac
-  done
-  return 1
-}
-
-check_kubectl() {
-  local ctx verb="${1-}" sub="${2-}" a
-  ctx="$(opt_val --context "$@")" || deny "kubectl: --context is mandatory"
-  in_list "$ctx" "${RO_CONTEXTS-}" || deny "kubectl: context $ctx not in RO_CONTEXTS ($RO_CONTEXTS)"
-  case "$verb" in
-    get|describe|api-resources|api-versions|version|explain|top|logs|events) ;;
-    auth) case "$sub" in can-i|whoami) ;; *) deny "kubectl: auth $sub" ;; esac ;;
-    cluster-info) [ "$sub" != dump ] || deny "kubectl: cluster-info dump" ;;
-    *) deny "kubectl: verb '$verb' not allowed (the verb goes first)" ;;
-  esac
-  for a in "$@"; do
-    case "$a" in
-      --kubeconfig*|--as|--as=*|--as-group*|--as-uid*|--token*|--server*|-s|--username*|--password*|--client-key*|--client-certificate*|-w|--watch*|-f|--follow*|--filename*)
-        deny "kubectl: $a not allowed" ;;
-      --raw=*/secrets*|/api/*/secrets*) deny "kubectl: Secrets are never read" ;;
-    esac
-    if [ "$verb" = get ] || [ "$verb" = describe ]; then
-      ! is_secret_res "$a" || deny "kubectl: Secrets are never read"
-    fi
-  done
-}
-
-check_helm() {
-  local ctx a
-  ctx="$(opt_val --kube-context "$@")" || deny "helm: --kube-context is mandatory"
-  in_list "$ctx" "${RO_CONTEXTS-}" || deny "helm: context $ctx not in RO_CONTEXTS ($RO_CONTEXTS)"
-  case "${1-}" in
-    list|ls|status|history|version) ;;
-    get) [ "${2-}" = metadata ] || deny "helm: only 'get metadata' (values and manifests may hold secrets)" ;;
-    *) deny "helm: '${1-}' not allowed" ;;
-  esac
-  for a in "$@"; do
-    case "$a" in --kubeconfig*|--kube-token*|--kube-as-*|--kube-apiserver*|--post-renderer*) deny "helm: $a not allowed" ;; esac
-  done
 }
 
 check_git() {
@@ -225,18 +165,34 @@ check_files() { # $1 tool, rest args
   fi
 }
 
+# Packs: each packs/<name>/ro.sh registers its tools with 'ro_tool <tool>' and defines check_<tool>
+# (it may use deny, opt_val, in_list and lower). Every pack under packs/ is loaded (packs/README.md).
+ro_tool() {
+  [[ "$1" =~ ^[a-z0-9]+$ ]] || { echo "ro: bad tool name '$1' in a pack" >&2; exit 2; }
+  case " $CORE_TOOLS $PACK_TOOLS " in *" $1 "*) echo "ro: tool '$1' registered twice" >&2; exit 2 ;; esac
+  PACK_TOOLS="${PACK_TOOLS:+$PACK_TOOLS }$1"
+}
+set +f   # the only glob of this script (set -f above for the agent's arguments)
+for pack in "$HARNESS"/packs/*/ro.sh; do
+  [ -f "$pack" ] || continue
+  # shellcheck source=/dev/null
+  . "$pack"
+done
+set -f
+for t in $PACK_TOOLS; do
+  declare -F "check_$t" >/dev/null || { echo "ro: a pack registers '$t' but defines no check_$t" >&2; exit 2; }
+done
+
 validate() { # $@ = tool args…
   local tool="${1-}"
   [ -n "$tool" ] || usage
   shift
+  case " $PACK_TOOLS " in *" $tool "*) "check_$tool" "$@"; return ;; esac
   case "$tool" in
-    aws) check_aws "$@" ;;
-    kubectl) check_kubectl "$@" ;;
-    helm) check_helm "$@" ;;
     git) check_git "$@" ;;
     gh) check_gh "$@" ;;
     cat|head|tail|ls|find|grep|wc|stat) check_files "$tool" "$@" ;;
-    *) deny "tool '$tool' not allowed (aws, kubectl, helm, git, gh, cat, head, tail, ls, find, grep, wc, stat)" ;;
+    *) deny "tool '$tool' not allowed ($(printf '%s' "$PACK_TOOLS $CORE_TOOLS" | sed 's/ /, /g'))" ;;
   esac
 }
 

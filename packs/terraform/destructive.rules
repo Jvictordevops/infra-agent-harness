@@ -1,0 +1,4 @@
+# Pack terraform: destructive commands block-destructive-platform blocks. 'name|regex' per line; placeholders in packs/README.md.
+terraform-destroy-import|<P>(terraform|tofu|terragrunt)<G><S>(destroy|import)<E>
+terraform-apply-destroy|<P>(terraform|tofu|terragrunt)<G><S>apply<G><S>-destroy<E>
+terraform-state-write|<P>(terraform|tofu|terragrunt)<G><S>state<G><S>(rm|push|replace-provider)<E>

@@ -1,0 +1,4 @@
+# Pack kubernetes: destructive commands block-destructive-platform blocks. 'name|regex' per line; placeholders in packs/README.md.
+kubectl-delete-drain-cordon|<P>kubectl<G><S>(delete|drain|cordon)<E>
+kubectl-scale-to-zero|<P>kubectl<G><S>scale<G><S>--replicas(=|<S>)0<E>
+kubectl-rollout-undo|<P>kubectl<G><S>rollout<G><S>undo<E>

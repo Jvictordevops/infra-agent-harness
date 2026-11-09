@@ -106,9 +106,10 @@ sequenceDiagram
 ```
 
 - `ro-guard` does nothing unless the read-only mode file exists. With it on, it blocks cloud, cluster and remote tools used outside `bin/ro`, and any attempt to switch the mode off. It exits with code 2 and the reason goes to the agent.
+- The platform rules of both guards come from the packs (`packs/<name>/guard-tools` and `destructive.rules`, see [packs/README.md](../packs/README.md)); the guards keep only the core ones (remote shells, `gh`, `az`, `gcloud`).
 - `block-destructive-platform` matches a list of rules (`terraform destroy`, `terraform state rm`, `kubectl delete|drain|cordon`, `kubectl rollout undo`, `helm uninstall`, `helmfile apply|destroy`, `aws ... delete-|terminate-|stop-`, `aws s3 rb|rm`...) anywhere in the command, also inside `ssh '...'` or `bash -c`. It answers with a block decision and a hint to let the user run it.
 - Each block appends one JSON line (time, hook, command cut to 300 characters, reason, directory) to `~/.local/state/infra-agent-harness/hook-decisions.jsonl` (mode 600). `IAH_HOOK_LOG` changes the path. Logging never makes a hook fail.
-- Separately from the hooks, `hooks/settings.base.json` (merged by `link-harness`; a plugin cannot ship permission rules) adds `permissions.deny` (destroy, delete, drain, uninstall, `aws s3 rb|rm`) and `permissions.ask` (force push, hard reset, `terraform apply`, `kubectl apply`, `helm install|upgrade`). `ask` means Claude Code stops and asks you.
+- Separately from the hooks, `hooks/settings.base.json` and `packs/*/permissions.json` (merged by `link-harness`; a plugin cannot ship permission rules) add `permissions.deny` (destroy, delete, drain, uninstall, `aws s3 rb|rm`) and `permissions.ask` (force push, hard reset, `terraform apply`, `kubectl apply`, `helm install|upgrade`). `ask` means Claude Code stops and asks you.
 - `hooks/confidence-nudge` (UserPromptSubmit) exists but is not in the base file; you register it yourself.
 
 ## 4. Read-only executor
@@ -135,7 +136,7 @@ sequenceDiagram
 ```
 
 - `bin/ro mode on [reason]` creates `~/.config/infra-agent-harness/ro-mode` (`RO_MODE_FILE` overrides the path). From then on `ro-guard` blocks `aws`, `kubectl`, `helm`, `terraform`, `ssh`, `gh`... unless they go through `bin/ro`.
-- `bin/ro` runs one command of a fixed shape: `aws <service> <read operation> --profile P`, `kubectl <read verb> --context C`, `helm list|status|history|get metadata`, `git -C <dir> log|show|diff...`, `gh` reads (`gh api` with GET only), and `cat|head|tail|ls|find|grep|wc|stat` under `RO_ROOTS`. No pipes, redirections or chaining. Secrets and credentials are refused. `RO_PROFILES` and `RO_CONTEXTS` narrow it per task.
+- `bin/ro` runs one command of a fixed shape (the `aws`, `kubectl` and `helm` checks live in `packs/<name>/ro.sh`): `aws <service> <read operation> --profile P`, `kubectl <read verb> --context C`, `helm list|status|history|get metadata`, `git -C <dir> log|show|diff...`, `gh` reads (`gh api` with GET only), and `cat|head|tail|ls|find|grep|wc|stat` under `RO_ROOTS`. No pipes, redirections or chaining. Secrets and credentials are refused. `RO_PROFILES` and `RO_CONTEXTS` narrow it per task.
 - `bin/ro --host <alias>` validates here, then runs over SSH (`BatchMode`). The remote copy (`RO_REMOTE_BIN`, default `~/infra-agent-harness/bin/ro`) validates again with its own paths and limits.
 - Only the user runs `bin/ro mode off`; the hook blocks agents from doing it, sub-agents included.
 

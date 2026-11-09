@@ -1,0 +1,12 @@
+{
+  "deny": [
+    "Bash(helm uninstall *)",
+    "Bash(helm * uninstall *)"
+  ],
+  "ask": [
+    "Bash(helm upgrade *)",
+    "Bash(helm * upgrade *)",
+    "Bash(helm install *)",
+    "Bash(helm * install *)"
+  ]
+}

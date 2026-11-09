@@ -39,7 +39,8 @@ Full detail and more diagrams: [docs/architecture.md](docs/architecture.md).
 - **Agent guards** (`hooks/`). With the plugin they are active as soon as it is installed (`hooks/hooks.json`); in a manual install `bin/link-harness` registers them in `~/.claude/settings.json`. The profile is fixed to `standard` until profiles land.
   - `ro-guard`: in read-only mode, blocks `aws`, `kubectl`, `helm`, `terraform`, `ssh`... outside `bin/ro`.
   - `block-destructive-platform`: blocks `terraform destroy`, `kubectl delete`, `aws ... delete-*`, `helm uninstall`...
-  - `permissions.deny` / `permissions.ask` rules from `hooks/settings.base.json` (plugins cannot ship them, so `bin/link-harness` merges them into `~/.claude/settings.json` in both modes).
+  - `permissions.deny` / `permissions.ask` rules from `hooks/settings.base.json` and the packs (plugins cannot ship them, so `bin/link-harness` merges them into `~/.claude/settings.json` in both modes).
+- **Rule packs** (`packs/`): the platform rules of the guards and `bin/ro`, one folder per technology (`aws`, `kubernetes`, `helm`, `terraform`), as data plus a small `bin/ro` check. Format and how to add one: [packs/README.md](packs/README.md).
   - Every block is appended to `~/.local/state/infra-agent-harness/hook-decisions.jsonl`.
 - **Read-only executor** (`bin/ro`): one allow-listed command at a time, here or over SSH (`--host`).
 - **Git hooks** (`bin/hooks/`): `commit-msg` (no AI attribution), `prepare-commit-msg` (adds the task trailer), `pre-commit` (gitleaks, then `bin/check-work --staged`), `post-merge` and `post-rewrite` (re-run `link-harness`).

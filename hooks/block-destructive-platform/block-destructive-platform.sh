@@ -3,7 +3,7 @@
 # Same API as block-git-write: JSON on stdin, JSON decision on stdout, exit 0.
 # Matches the tool anywhere in the command (also inside ssh '…' or bash -c "…") and allows any
 # tokens between the tool and the verb (-n prod, --profile pro, -chdir=x), but never across ; | &.
-# Guards against mistakes, not against an adversary. Tests: tests/block-destructive.sh
+# Guards against mistakes, not against an adversary. Tests: tests/block-destructive.sh, tests/packs.sh
 set -euo pipefail
 # shellcheck source=hooks/lib/log-decision.sh
 . "$(dirname "$0")/../lib/log-decision.sh"
@@ -16,21 +16,21 @@ S='[[:space:]]+'
 G="(${S}[^[:space:];|&]+)*"      # any tokens in the same segment
 E='([[:space:]]|$|["'"'"'`;|&)])' # end of the verb
 
-TF="${P}(terraform|tofu|terragrunt)"
-RULES=(   # name|pattern
-  "terraform-destroy-import|${TF}${G}${S}(destroy|import)${E}"
-  "terraform-apply-destroy|${TF}${G}${S}apply${G}${S}-destroy${E}"
-  "terraform-state-write|${TF}${G}${S}state${G}${S}(rm|push|replace-provider)${E}"
-  "kubectl-delete-drain-cordon|${P}kubectl${G}${S}(delete|drain|cordon)${E}"
-  "kubectl-scale-to-zero|${P}kubectl${G}${S}scale${G}${S}--replicas(=|${S})0${E}"
-  "kubectl-rollout-undo|${P}kubectl${G}${S}rollout${G}${S}undo${E}"
-  "helm-uninstall|${P}helm${G}${S}(uninstall|delete|del|un)${E}"
-  "helmfile-apply-destroy|${P}helmfile${G}${S}(destroy|apply|delete)${E}"
-  "aws-delete-terminate-stop|${P}aws${G}${S}(delete-|terminate-|stop-)[a-z0-9-]+${E}"
-  "aws-s3-rb-rm|${P}aws${G}${S}s3${G}${S}(rb|rm)${E}"
-)
+# Rules come from packs/*/destructive.rules ('name|regex' per line, # comments); the regex may use the
+# placeholders <P> <S> <G> <E> for the four pieces above (packs/README.md). Every pack under packs/ is active.
+PACKS="$(dirname "$0")/../../packs"
+shopt -u patsub_replacement 2>/dev/null || true   # bash >= 5.2 would turn a '&' of the replacement into the match
+RULES=()
+for f in "$PACKS"/*/destructive.rules; do
+  [ -f "$f" ] || continue
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|'#'*) continue ;; esac
+    line="${line//<P>/$P}"; line="${line//<S>/$S}"; line="${line//<G>/$G}"; line="${line//<E>/$E}"
+    RULES+=("$line")
+  done < "$f"
+done
 
-for rule in "${RULES[@]}"; do
+for rule in ${RULES[@]+"${RULES[@]}"}; do
   name="${rule%%|*}" pattern="${rule#*|}"
   if printf '%s\n' "$CMD" | grep -qE -- "$pattern"; then
     log_decision block-destructive-platform "$CMD" "$name"

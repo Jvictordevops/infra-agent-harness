@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ro-guard.sh — PreToolUse(Bash). In read-only mode (bin/ro mode on) clouds, clusters and other
-# machines are reached only through bin/ro: blocks aws/kubectl/helm/terraform/ssh… outside it, and
+# machines are reached only through bin/ro: blocks aws/kubectl/helm/terraform/ssh… (core + packs) outside it, and
 # switching the mode off (only the user does it, from a terminal). No mode file -> does nothing.
 # Guards against mistakes, not against an adversary: a script written on the fly is not inspected.
 # Exit 2 = block (the reason goes to the agent on stderr).
@@ -13,7 +13,16 @@ INPUT="$(cat)"   # always read stdin: the caller may fail writing to a closed pi
 [ -f "$MODE" ] || exit 0
 
 CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""')"
-FORBIDDEN='ssh|scp|sftp|rsync|sshfs|mosh|aws|kubectl|helm|helmfile|terraform|tofu|terragrunt|eksctl|argocd|k9s|kubectx|kubens|flux|gh|az|gcloud'
+# Core: other machines, GitHub, and the clouds without a pack (blocked by default). The packs add theirs
+# (packs/*/guard-tools, one name per line). Every pack under packs/ is active.
+FORBIDDEN='ssh|scp|sftp|rsync|sshfs|mosh|gh|az|gcloud'
+for f in "$(dirname "$0")"/../../packs/*/guard-tools; do
+  [ -f "$f" ] || continue
+  while IFS= read -r t || [ -n "$t" ]; do
+    case "$t" in ''|'#'*) continue ;; esac
+    [[ "$t" =~ ^[a-z0-9_-]+$ ]] && FORBIDDEN="$FORBIDDEN|$t"
+  done < "$f"
+done
 
 block() {
   log_decision ro-guard "$CMD" "$1"

@@ -1,0 +1,8 @@
+# Pack kubernetes: commands ro-guard blocks outside bin/ro in read-only mode. One name per line.
+kubectl
+eksctl
+argocd
+flux
+k9s
+kubectx
+kubens

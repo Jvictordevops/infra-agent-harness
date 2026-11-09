@@ -1,39 +1,14 @@
 {
-  "_comment": "Base merged into ~/.claude/settings.json by bin/link-harness (union). Manual install: permissions + hooks, __ROOT__ = this repo. Plugin mode: only permissions (hooks/hooks.json registers the guards). deny = same family as hooks/block-destructive-platform; ask = GLOBAL.md 'Defensivos' (confirm and show the exact command).",
+  "_comment": "Core base merged into ~/.claude/settings.json by bin/link-harness (union), together with packs/*/permissions.json. Manual install: permissions + hooks, __ROOT__ = this repo. Plugin mode: only permissions (hooks/hooks.json registers the guards). Platform deny/ask rules live in the packs; here only the core ones: ask = git force push and hard reset (GLOBAL.md 'Defensivos': confirm and show the exact command).",
   "permissions": {
-    "deny": [
-      "Bash(terraform destroy *)",
-      "Bash(terraform * destroy)",
-      "Bash(terraform * destroy *)",
-      "Bash(terraform state rm *)",
-      "Bash(terraform * state rm *)",
-      "Bash(kubectl delete *)",
-      "Bash(kubectl * delete *)",
-      "Bash(kubectl drain *)",
-      "Bash(kubectl * drain *)",
-      "Bash(helm uninstall *)",
-      "Bash(helm * uninstall *)",
-      "Bash(aws * delete-*)",
-      "Bash(aws * terminate-*)",
-      "Bash(aws s3 rb *)",
-      "Bash(aws s3 rm *)"
-    ],
+    "deny": [],
     "ask": [
       "Bash(git push --force*)",
       "Bash(git push * --force*)",
       "Bash(git push -f *)",
       "Bash(git push * -f *)",
       "Bash(git reset --hard*)",
-      "Bash(git reset * --hard*)",
-      "Bash(terraform apply *)",
-      "Bash(terraform * apply)",
-      "Bash(terraform * apply *)",
-      "Bash(kubectl apply *)",
-      "Bash(kubectl * apply *)",
-      "Bash(helm upgrade *)",
-      "Bash(helm * upgrade *)",
-      "Bash(helm install *)",
-      "Bash(helm * install *)"
+      "Bash(git reset * --hard*)"
     ]
   },
   "hooks": {
