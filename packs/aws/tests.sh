@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2088  # '~/…' is passed to the helpers as the agent types it
+# shellcheck disable=SC2088,SC2016  # '~/…' and '$(…)' are passed to the helpers as the agent types them
 # Tests for the aws pack: bin/ro reads, destructive commands, deny rules and ro-guard. Runs nothing real.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -62,5 +62,42 @@ credok "AWS_SHARED_CREDENTIALS_FILE=~/.aws/credentials aws sts get-caller-identi
 credok "cat ~/.aws/config"
 credok "ls -l ~/.aws/credentials"
 credok "aws s3 cp build/ s3://b/ --recursive"
+
+# Commands that print a secret (secret-commands): shown is blocked, used is not
+credblk "aws configure export-credentials --profile p"
+credblk "aws configure export-credentials --format env --profile p"
+credblk "aws configure get aws_secret_access_key --profile p"
+credblk "aws configure get profile.p.aws_session_token"
+credblk "aws --profile p ecr get-login-password"
+credblk "aws ecr get-login-password --region eu-west-1 | base64 -d"
+credblk "aws ecr-public get-login-password"
+credblk "aws codeartifact get-authorization-token --domain d"
+credblk "aws sts get-session-token"
+credblk "aws sts assume-role --role-arn arn:aws:iam::1:role/r --role-session-name s"
+credblk "aws sts assume-role-with-web-identity --role-arn r --web-identity-token t"
+credblk "aws sso get-role-credentials --role-name r --account-id 1 --access-token t"
+credblk "aws eks get-token --cluster-name c"
+credblk "aws rds generate-db-auth-token --hostname h --port 5432 --username u"
+credblk "aws iam create-access-key --user-name u"
+credblk "aws secretsmanager get-secret-value --secret-id db --profile p"
+credblk "aws secretsmanager get-secret-value --secret-id db | jq -r .SecretString"
+credblk "aws secretsmanager batch-get-secret-value --secret-id-list a b"
+credblk "aws ssm get-parameter --name /x --with-decryption"
+credblk "aws ssm get-parameters --names /x /y --with-decryption > p.json"
+credblk "aws ssm get-parameters-by-path --path /x --recursive --with-decryption"
+credblk "aws kms decrypt --ciphertext-blob fileb://x"
+credblk 'echo "$(aws secretsmanager get-secret-value --secret-id db)"'
+credok "aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin 1.dkr.ecr.eu-west-1.amazonaws.com"
+credok 'docker login -u AWS -p "$(aws ecr get-login-password)" 1.dkr.ecr.eu-west-1.amazonaws.com'
+credok 'docker login -u AWS --password-stdin x <<< "$(aws ecr get-login-password)"'
+credok 'eval "$(aws configure export-credentials --format env)"'
+credok 'export DB_PASS=$(aws secretsmanager get-secret-value --secret-id db --query SecretString --output text)'
+credok "aws secretsmanager list-secrets"
+credok "aws secretsmanager describe-secret --secret-id db"
+credok "aws ssm get-parameter --name /x"
+credok "aws ssm get-parameter --name /x --no-with-decryption"
+credok "aws configure get region"
+credok "aws configure list"
+credok "aws sts get-caller-identity"
 
 pack_done "aws pack"

@@ -3,6 +3,9 @@
 # read, copy or send them (the floor; packs/README.md, "Credential files").
 #   Bash: blocks a credential path given to a reader (cat, grep, cp, curl -T, python -c…), read with '<' or sent
 #         as @path / file://path. Using it (ssh -i, --kubeconfig, KUBECONFIG=, source .env) is allowed.
+#         Also blocks a command that prints a secret (gh auth token, aws secretsmanager get-secret-value…) when
+#         its output is shown: on the screen, in a file or through a reader. Piped into another tool or kept in a
+#         variable it is a use and passes. Lists: hooks/credential-guard/secret-commands + packs/*/secret-commands.
 #   Read, Grep: blocks a credential path (also through a symlink).
 # Credential paths: hooks/credential-guard/credential-files + packs/*/credential-files. Readers:
 # hooks/credential-guard/readers + packs/*/credential-readers. The same paths are Read(…) deny rules
@@ -39,4 +42,9 @@ esac
 CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)"
 [ -n "$CMD" ] || exit 0
 cred_check_line "$CMD" || block "$CMD" "$CRED_WHAT"
+if ! sec_check_line "$CMD"; then
+  log_decision credential-guard "$CMD" "secret command '$CRED_HIT': $CRED_WHAT"
+  echo "credential-guard: '$CRED_HIT' prints a secret, and here it would be $CRED_WHAT. Agents use secrets (piped into the tool that needs them, '… | docker login --password-stdin', or kept in a variable, 'TOKEN=\$(…)') but never show them. If you need its value, ask the user to look." >&2
+  exit 2
+fi
 exit 0

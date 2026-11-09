@@ -21,7 +21,7 @@ for d in "$ROOT"/packs/*/; do
   d="${d%/}"; p="${d##*/}"; n=$((n + 1))
   [[ "$p" =~ ^[a-z0-9-]+$ ]] || ko "$p: pack name must be [a-z0-9-]"
   for f in "$d"/*; do
-    case "${f##*/}" in ro.sh|guard-tools|destructive.rules|permissions.json|tests.sh|domains|credential-files|credential-readers|README.md) ;;
+    case "${f##*/}" in ro.sh|guard-tools|destructive.rules|permissions.json|tests.sh|domains|credential-files|credential-readers|secret-commands|README.md) ;;
       *) ko "$p: unknown file ${f##*/} (packs/README.md)" ;; esac
   done
   if [ -f "$d/permissions.json" ]; then
@@ -54,6 +54,12 @@ for d in "$ROOT"/packs/*/; do
       [[ "$r" =~ ^[a-z0-9_.-]+( [^[:space:]]+)?$ ]] || ko "$p: credential-readers: not '<command>' or '<command> <word>': $r"
     done < "$d/credential-readers"
   fi
+  if [ -f "$d/secret-commands" ]; then
+    while IFS= read -r r || [ -n "$r" ]; do
+      case "$r" in ''|'#'*) continue ;; esac
+      [[ "$r" =~ ^[a-z0-9_.*-]+( [^[:space:]]+)+$ ]] || ko "$p: secret-commands: not '<command> <word> …': $r"
+    done < "$d/secret-commands"
+  fi
   if [ -f "$d/destructive.rules" ]; then
     while IFS= read -r r || [ -n "$r" ]; do
       case "$r" in ''|'#'*) continue ;; esac
@@ -79,6 +85,7 @@ printf '# demo\ndemo-nuke|<P>demo<G><S>nuke<E>\n' > "$H/packs/demo/destructive.r
 printf '{"deny": ["Bash(demo nuke *)"], "ask": ["Bash(demo apply *)"]}\n' > "$H/packs/demo/permissions.json"
 printf '# demo\n~/.demo/token\n**/demo.secret\n' > "$H/packs/demo/credential-files"
 printf '# demo\ndemo push\n' > "$H/packs/demo/credential-readers"
+printf '# demo\ndemo show-key\n' > "$H/packs/demo/secret-commands"
 
 "$H/bin/ro" --check demo list >/dev/null 2>&1 || ko "ro: the demo pack's tool is not allowed"
 "$H/bin/ro" --check demo nuke >/dev/null 2>&1 && ko "ro: the demo pack's check does not run"
@@ -102,6 +109,9 @@ decide "$CRG" "grep x app/demo.secret" 2>/dev/null; [ $? = 2 ] || ko "credential
 decide "$CRG" "demo push ~/.demo/token" 2>/dev/null; [ $? = 2 ] || ko "credential-guard: the demo reader does not block"
 decide "$CRG" "demo use ~/.demo/token" 2>/dev/null || ko "credential-guard: a use of the demo credential is blocked"
 decide "$ROOT/hooks/credential-guard/credential-guard.sh" "cat ~/.demo/token" 2>/dev/null || ko "credential-guard: demo credential blocked without its pack"
+decide "$CRG" "demo show-key" 2>/dev/null; [ $? = 2 ] || ko "credential-guard: the demo secret command is not blocked"
+decide "$CRG" 'KEY=$(demo show-key)' 2>/dev/null || ko "credential-guard: a use of the demo secret command is blocked"
+decide "$ROOT/hooks/credential-guard/credential-guard.sh" "demo show-key" 2>/dev/null || ko "credential-guard: demo secret command blocked without its pack"
 
 # shellcheck source=bin/lib/packs.sh
 . "$ROOT/bin/lib/packs.sh"

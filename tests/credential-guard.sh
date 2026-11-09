@@ -144,6 +144,92 @@ passes "$(printf '%s\n' 'cat > notes.md <<-EOF' '	grep x .env' '	EOF' 'ls')"
 blocks "$(printf '%s\n' 'cat > notes.md <<EOF' 'text' 'EOF' 'cat .env')"
 passes 'grep -q x <<<"cat .env"'
 
+# --- Commands that print a secret (secret-commands): shown on the screen, in a file or through a reader
+while IFS= read -r c; do [ -n "$c" ] && blocks "$c"; done <<'EOF'
+gh auth token
+gh auth status --show-token
+gh auth status -t
+/usr/bin/gh auth token
+sudo gh auth token
+timeout 5 gh auth token
+x=1 gh auth token
+ls; gh auth token
+gh auth token && ls
+gh auth token > t.txt
+gh auth token >> t.txt
+gh auth token &> t.txt
+gh auth token | tee t.txt
+gh auth token | tee t.txt > /dev/null
+gh auth token 2>/dev/null
+gh auth token >&2
+gh auth token | base64
+gh auth token 2>&1 | cat
+gh auth token | jq -r . | base64
+echo "$(gh auth token)"
+echo `gh auth token`
+printf '%s\n' "$(gh auth token)"
+echo TOKEN=$(gh auth token)
+echo "$(gh auth token)" | base64
+echo "$(echo "$(gh auth token)")"
+cat <(gh auth token)
+cat <<< "$(gh auth token)"
+x=$(gh auth token); echo "$(gh auth token)"
+bash -c 'gh auth token'
+bash -c 'gh auth token' | base64
+ssh host gh auth token
+ssh -p 22 host 'gh auth token | base64'
+eval 'gh auth token'
+watch -n 5 gh auth token
+bw get password github
+bw get item github
+bw list items
+bw export --format json
+bw unlock --raw
+git credential fill
+docker-credential-desktop get
+security find-generic-password -s x -w
+EOF
+
+# --- Using it: piped into a tool that is not a reader, kept in a variable, thrown away; or not a secret
+while IFS= read -r c; do [ -n "$c" ] && passes "$c"; done <<'EOF'
+export GH_TOKEN=$(gh auth token)
+GH_TOKEN=$(gh auth token) gh api user
+GH_TOKEN="$(gh auth token)"
+local t="$(gh auth token)"
+TOKEN=`gh auth token`
+TOKEN=$(gh auth token) echo done
+docker login ghcr.io -u me --password-stdin < <(gh auth token)
+curl -H "Authorization: Bearer $(gh auth token)" https://api.github.com/user
+gh auth token | docker login ghcr.io -u me --password-stdin
+gh auth token | wc -c
+gh auth token > /dev/null
+gh auth token >/dev/null 2>&1
+bash -c 'gh auth token' > /dev/null
+bash -c 'gh auth token | base64' | docker login ghcr.io -u me --password-stdin
+BW_SESSION="$(bw unlock --raw)"
+export BW_SESSION=$(bw unlock --raw)
+gh auth status
+gh auth login
+gh api user
+bw unlock --check
+bw get username github
+git credential reject
+grep -n 'gh auth token' notes.md
+git commit -m "block gh auth token"
+echo "gh auth token"
+# gh auth token
+ls -l # then gh auth token
+echo $((1 + 2))
+EOF
+passes "$(printf '%s\n' "cat > notes.md <<'EOF'" 'gh auth token' 'EOF')"
+blocks "$(printf '%s\n' "cat > notes.md <<'EOF'" 'text' 'EOF' 'gh auth token')"
+# sec_check_line on its own (without cred_check_line of the same line first) reads the lists itself
+( . "$ROOT/hooks/lib/credentials.sh"; cred_load "$ROOT"; sec_check_line "gh auth token" ) && ko "sec_check_line alone does not block 'gh auth token'"
+( . "$ROOT/hooks/lib/credentials.sh"; cred_load "$ROOT"; sec_check_line "gh auth status" ) || ko "sec_check_line alone blocks 'gh auth status'"
+msg="$(jq -n '{tool_name:"Bash", tool_input:{command:"gh auth token | base64"}}' | "$HOOK" 2>&1 >/dev/null)"
+case "$msg" in *"'gh auth token' prints a secret, and here it would be shown through 'base64'"*'ask the user'*) ;; *) ko "message: $msg" ;; esac
+grep -qF "secret command 'gh auth token': shown through 'base64'" "$IAH_HOOK_LOG" || ko "the log does not name the secret command"
+
 # --- Read and Grep tools
 [ "$(tool_rc Read "$HOME/.aws/credentials")" = 2 ] || ko "Read of ~/.aws/credentials not blocked"
 [ "$(tool_rc Read /srv/app/.env)" = 2 ] || ko "Read of /srv/app/.env not blocked"

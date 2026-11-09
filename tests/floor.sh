@@ -79,4 +79,21 @@ for f in "${FLOOR_CREDENTIALS[@]}"; do
   readdenied "$f"
 done
 
+# Commands that print a secret: never shown to an agent, whatever the profile and packs (credential-guard).
+# Core first, then the packs.
+FLOOR_SECRET_COMMANDS=(
+  "gh auth token"
+  "bw get password x"
+  "git credential fill"
+  "aws configure export-credentials"
+  "aws secretsmanager get-secret-value --secret-id x"
+  "kubectl config view --raw"
+  "kubectl get secret x -o yaml"
+)
+for c in "${FLOOR_SECRET_COMMANDS[@]}"; do
+  credblk "$c"
+  credblk "$c | base64"
+  credok "X=\$($c)"
+done
+
 pack_done floor

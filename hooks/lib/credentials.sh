@@ -15,6 +15,10 @@
 #                              the shell does not expand them): only the name itself counts, not what it would match.
 #   cred_check_line <command>  0 if the command line only uses credentials; 1 if it reads, copies or sends one
 #                              (sets CRED_HIT and CRED_WHAT). Needs cred_load.
+#   sec_check_line <command>   0 if no command that prints a secret (hooks/credential-guard/secret-commands +
+#                              packs/*/secret-commands of the harness given to cred_load) shows it; 1 if its
+#                              output ends on the screen, in a file or in a reader (sets CRED_HIT to the line of
+#                              the list and CRED_WHAT). Needs cred_load.
 #
 # What counts as reading (decision "Leer o copiar, no usar"): a credential path given to a reader (cat, grep,
 # cp, curl -T…, python -c…; list in the readers files), read with '<', or sent as '@path' / 'file://path'.
@@ -69,6 +73,7 @@ cred_load() {
     if [ -n "$a" ]; then CRED_ANCHORS="$CRED_ANCHORS$a"$'\n'; else CRED_ANCHORS="$CRED_ANCHORS*"$'\n'; fi
   done < <(cred_patterns "$1")
   while IFS= read -r l; do CRED_READERS+=("$l"); done < <(_cred_files "$1" readers credential-readers | _cred_lines)
+  CRED_HARNESS="$1"   # its secret-commands lists: picked by cred_check_line, used by sec_check_line
 }
 
 _cred_has_glob() { case "$1" in *[\*\?\[]*) return 0 ;; esac; return 1; }
@@ -158,6 +163,20 @@ function emit_word(   w, t, n, i, parts, p, pr, flag, l) {
 }
 { buf = buf (NR > 1 ? "\n" : "") $0 }
 END {
+  # First the lines of the secret-commands files (ENVIRON SEC_FILES, one path per line) whose anchor, their
+  # longest piece without * ? [, is in the command line: K<TAB>line (sec_check_line parses only for those)
+  nsf = split(ENVIRON["SEC_FILES"], sf, "\n")
+  for (fi = 1; fi <= nsf; fi++) {
+    if (sf[fi] == "") continue
+    while ((getline sl < sf[fi]) > 0) {
+      sub(/[ \t]+#.*$/, "", sl); sub(/[ \t]+$/, "", sl)
+      if (sl == "" || sl ~ /^#/) continue
+      sn = split(sl, sw, /[ \t]+/); sbest = ""
+      for (sk = 1; sk <= sn; sk++) { sm = split(sw[sk], spc, /[*?[]/); for (sj = 1; sj <= sm; sj++) if (length(spc[sj]) > length(sbest)) sbest = spc[sj] }
+      if (index(buf, sbest) > 0) print "K\t" sl
+    }
+    close(sf[fi])
+  }
   L = length(buf); q = ""; word = ""; inword = 0; nw = 0; nextr = 0; nextout = 0; hdpend = 0; hdm = ""
   for (i = 1; i <= L; i++) {
     c = substr(buf, i, 1)
@@ -301,15 +320,282 @@ _cred_segment() {
 }
 
 cred_check_line() {
-  local depth="${2:-0}" kind a b c d out
+  local depth="${2:-0}" kind a b c d out files=""
   local _CW=() _CI=() _CF=() _CP=() _CL=()
-  out="$(printf '%s\n' "$1" | awk -v anchors="$CRED_ANCHORS" -v home="$HOME" "$_CRED_AWK")"
+  if [ "$depth" = 0 ]; then _sec_files; files="$_SEC_FILES"; SEC_LINES=(); SEC_PICKED="$1"; fi
+  out="$(printf '%s\n' "$1" | SEC_FILES="$files" awk -v anchors="$CRED_ANCHORS" -v home="$HOME" "$_CRED_AWK")"
   while IFS=$'\t' read -r kind a b c d; do
     case "$kind" in
+      K) SEC_LINES+=("$a") ;;
       W) _CW[a]="$b" ;;
       C) _CI+=("$a"); _CF+=("$b"); _CP+=("$c"); _CL+=("$d") ;;
       S) _cred_segment "$depth" || return 1; _CW=() _CI=() _CF=() _CP=() _CL=() ;;
     esac
   done <<<"$out"
+  return 0
+}
+
+# --- Commands that print a secret (decision "Mostrar, no usar"): where does their output go?
+# Parser: the command line on stdin -> 'W<TAB>node<TAB>index<TAB>word' per word and, when a simple command
+# (node) ends, 'N<TAB>node<TAB>parent<TAB>word<TAB>out'. parent/word: the node and the index of its word that
+# holds this node as $(…), `…` or <(…) (-1 at the top). out: where its standard output goes: |<node> piped to
+# that node, > a file, 0 /dev/null, - the screen (top) or the word of the parent. Quotes are honoured ($(…)
+# also inside double quotes); comments, heredoc bodies, here-strings and input redirections are not words.
+# A subshell ( … ) or >(…) is only a separator; a ')' of a case pattern inside $(…) closes it too early.
+# shellcheck disable=SC2016  # an awk program: its $ are awk's
+_SEC_AWK='
+function newnode(par, pw) { nid++; P[nid] = par; PW[nid] = pw; NW[nid] = 0; OUT[nid] = "-"; return nid }
+function endnode(pipe,   nx) {
+  if (inword) emit_word()
+  nx = newnode(P[cur], PW[cur])
+  if (pipe && OUT[cur] == "-") OUT[cur] = "|" nx
+  print "N\t" cur "\t" P[cur] "\t" PW[cur] "\t" OUT[cur]
+  cur = nx; pend = ""; skipw = 0
+}
+function emit_word(   w) {
+  w = word; word = ""; inword = 0
+  if (hdpend) { hdm = w; sub(/^-/, "", hdm); hdpend = 0; return }
+  if (pend != "") { if (pend == "1" || pend == "&") OUT[cur] = (w == "/dev/null") ? "0" : ">"; pend = ""; return }
+  if (skipw) { skipw = 0; return }
+  gsub(/[\t\n]/, " ", w)
+  print "W\t" cur "\t" NW[cur] "\t" w
+  NW[cur]++
+}
+# $(…), `…` or <(…): a new node whose output goes into the word being built in the current one
+function open_sub(t) {
+  sp++; ST[sp] = t; SC[sp] = cur; SQ[sp] = q; SWD[sp] = word; SPD[sp] = pend; SSK[sp] = skipw; SHD[sp] = hdpend
+  cur = newnode(cur, NW[cur]); word = ""; inword = 0; q = ""; pend = ""; skipw = 0; hdpend = 0
+}
+function close_sub() {
+  if (inword) emit_word()
+  print "N\t" cur "\t" P[cur] "\t" PW[cur] "\t" OUT[cur]
+  cur = SC[sp]; q = SQ[sp]; word = SWD[sp]; pend = SPD[sp]; skipw = SSK[sp]; hdpend = SHD[sp]; sp--
+  inword = 1
+}
+function backtick() { if (sp > 0 && ST[sp] == "b") close_sub(); else open_sub("b") }
+{ buf = buf (NR > 1 ? "\n" : "") $0 }
+END {
+  L = length(buf); q = ""; word = ""; inword = 0; pend = ""; skipw = 0; hdpend = 0; hdm = ""; sp = 0; nid = 0
+  cur = newnode(-1, -1)
+  for (i = 1; i <= L; i++) {
+    c = substr(buf, i, 1); d = substr(buf, i + 1, 1)
+    if (q == "\047") { if (c == "\047") q = ""; else word = word c; continue }
+    if (q == "\"") {
+      if (c == "\\" && i < L && d ~ /["\\$`]/) { word = word d; i++; continue }
+      if (c == "\"") { q = ""; continue }
+      if (c == "$" && d == "(") { i++; open_sub("s"); continue }
+      if (c == "`") { backtick(); continue }
+      word = word c; continue
+    }
+    if (c == "\\" && i < L) { i++; if (d != "\n") { word = word d; inword = 1 }; continue }
+    if (c == "\047" || c == "\"") { q = c; inword = 1; continue }
+    if (c == "#" && !inword) { while (i < L && substr(buf, i + 1, 1) != "\n") i++; continue }
+    if (c == " " || c == "\t") { if (inword) emit_word(); continue }
+    if (c == "\n") {
+      endnode(0)
+      if (hdm != "") {   # skip the heredoc body, up to the line that is the marker (tabs allowed before it)
+        while (i < L) {
+          j = index(substr(buf, i + 1), "\n"); line = (j ? substr(buf, i + 1, j - 1) : substr(buf, i + 1))
+          i = j ? i + j : L
+          sub(/^\t+/, "", line)
+          if (line == hdm) break
+        }
+        hdm = ""
+      }
+      continue
+    }
+    if (c == "`") { backtick(); continue }
+    if (c == "$" && d == "(") { i++; open_sub("s"); continue }
+    if (c == "(") { if (inword) emit_word(); sp++; ST[sp] = "g"; endnode(0); continue }
+    if (c == ")") {
+      if (sp > 0 && ST[sp] == "s") { close_sub(); continue }
+      if (sp > 0 && ST[sp] == "g") sp--
+      endnode(0); continue
+    }
+    if (c == "|") { if (d == "|") { i++; endnode(0); continue }; if (d == "&") i++; endnode(1); continue }
+    if (c == "&") {
+      if (d == "&") { i++; endnode(0); continue }
+      if (d == ">") { if (inword) emit_word(); i++; if (substr(buf, i + 1, 1) == ">") i++; pend = "&"; continue }
+      endnode(0); continue
+    }
+    if (c == ";") { endnode(0); continue }
+    if (c == "<") {
+      if (inword && word ~ /^[0-9]+$/) { word = ""; inword = 0 } else if (inword) emit_word()
+      if (d == "<") {
+        if (substr(buf, i + 2, 1) == "<") { i += 2; skipw = 1; continue }   # <<< here-string: data
+        i++; hdpend = 1; continue                                           # << heredoc: marker
+      }
+      if (d == "(") { i++; open_sub("s"); continue }
+      if (d == "&") i++
+      skipw = 1; continue
+    }
+    if (c == ">") {
+      fd = "1"
+      if (inword && word ~ /^[0-9]+$/) { fd = word; word = ""; inword = 0 } else if (inword) emit_word()
+      if (d == ">" || d == "|") { i++; d = substr(buf, i + 1, 1) }
+      if (d == "&") { i++; skipw = 1; continue }                     # >&2, 2>&1: a copy of a descriptor
+      if (d == "(") { i++; sp++; ST[sp] = "g"; endnode(0); continue }  # >(…): a separate command
+      pend = fd; continue
+    }
+    word = word c; inword = 1
+  }
+  if (inword) emit_word()
+  while (sp > 0) { if (ST[sp] != "g") close_sub(); else sp-- }
+  print "N\t" cur "\t" P[cur] "\t" PW[cur] "\t" OUT[cur]
+}'
+
+_sec_words() { # $1 node -> _CW (its words) and _SEC_S (index of the command, after prefixes such as sudo, VAR=)
+  local n="$1" k m="${_SNW[$1]:-0}"
+  _CW=()
+  for ((k = 0; k < m; k++)); do _CW[k]="${_SW[$((n * 100000 + k))]-}"; done
+  _SEC_S=0
+  while [ "$_SEC_S" -lt "${#_CW[@]}" ]; do
+    case "${_CW[$_SEC_S]}" in
+      [A-Za-z_]*=*|sudo|env|command|exec|time|nohup|nice|xargs|'{'|'}'|'!'|if|then|else|elif|do|while|until|-*) _SEC_S=$((_SEC_S + 1)) ;;
+      timeout) _SEC_S=$((_SEC_S + 2)) ;;
+      *) break ;;
+    esac
+  done
+}
+
+_sec_files() { # -> _SEC_FILES: the secret-commands files of the core and the packs of CRED_HARNESS, one per line
+  local h="${CRED_HARNESS:-.}" f restore=0
+  _SEC_FILES=""
+  case $- in *f*) restore=1; set +f ;; esac
+  [ -f "$h/hooks/credential-guard/secret-commands" ] && _SEC_FILES="$h/hooks/credential-guard/secret-commands"$'\n'
+  for f in "$h"/packs/*/secret-commands; do [ -f "$f" ] && _SEC_FILES="$_SEC_FILES$f"$'\n'; done
+  [ "$restore" = 0 ] || set -f
+  return 0
+}
+
+_sec_is_secret() { # _CW/_SEC_S of a node -> 0 if it is one of SEC_LINES (CRED_HIT = the line)
+  local cmd="${_CW[$_SEC_S]-}" k m j found f
+  cmd="${cmd##*/}"; [ -n "$cmd" ] || return 1
+  for ((k = 0; k < ${#SEC_LINES[@]}; k++)); do
+    # shellcheck disable=SC2053  # the list holds globs on purpose
+    [[ "$cmd" == ${SEC_LINES[$k]%% *} ]] || continue
+    read -r -a f <<<"${SEC_LINES[$k]}"
+    found=1
+    for ((m = 1; m < ${#f[@]}; m++)); do
+      found=0
+      for ((j = _SEC_S + 1; j < ${#_CW[@]}; j++)); do
+        # shellcheck disable=SC2053
+        if [[ "${_CW[$j]}" == ${f[$m]} ]]; then found=1; break; fi
+      done
+      [ "$found" = 1 ] || break
+    done
+    if [ "$found" = 1 ]; then CRED_HIT="${SEC_LINES[$k]}"; return 0; fi
+  done
+  return 1
+}
+
+_sec_carrier() { # $1 node -> 0 if it passes the secret on to its output: a reader (cat, jq, base64, sed…),
+  # echo, printf or tee. _SEC_CMD = its name; _SEC_TEE = 1 if it is tee writing a file
+  local k
+  _sec_words "$1"; _SEC_TEE=0; _SEC_CMD="${_CW[$_SEC_S]-}"; _SEC_CMD="${_SEC_CMD##*/}"
+  case "$_SEC_CMD" in
+    '') return 1 ;;
+    echo|printf) return 0 ;;
+    tee)
+      for ((k = _SEC_S + 1; k < ${#_CW[@]}; k++)); do
+        case "${_CW[$k]}" in -*|/dev/null|/dev/stdout|/dev/stderr) ;; *) _SEC_TEE=1 ;; esac
+      done
+      return 0 ;;
+  esac
+  _cred_is_reader "$_SEC_S"
+}
+
+_sec_inner() { # _CW/_SEC_S of a node -> 0 and _SEC_INNER if it runs a command line given as text (bash -c,
+  # eval, watch, ssh <host> …): its output is the output of that line
+  local k cmd="${_CW[$_SEC_S]-}"
+  cmd="${cmd##*/}"; _SEC_INNER=""
+  case "$cmd" in
+    bash|sh|zsh|dash|ksh)
+      for ((k = _SEC_S + 1; k < ${#_CW[@]}; k++)); do
+        case "${_CW[$k]}" in -*c) _SEC_INNER="${_CW[$((k + 1))]-}"; break ;; -*) ;; *) break ;; esac
+      done ;;
+    eval) _SEC_INNER="$(_cred_join $((_SEC_S + 1)))" ;;
+    watch)
+      for ((k = _SEC_S + 1; k < ${#_CW[@]}; k++)); do
+        case "${_CW[$k]}" in -n|--interval) k=$((k + 1)) ;; -*) ;; *) break ;; esac
+      done
+      _SEC_INNER="$(_cred_join "$k")" ;;
+    ssh)
+      for ((k = _SEC_S + 1; k < ${#_CW[@]}; k++)); do
+        case "${_CW[$k]}" in
+          -[BbcDEeFIiJLlmOoPpQRSWw]) k=$((k + 1)) ;;
+          -*) ;;
+          *) _SEC_INNER="$(_cred_join $((k + 1)))"; break ;;
+        esac
+      done ;;
+  esac
+  [ -n "$_SEC_INNER" ]
+}
+
+_sec_flow() { # $1 node whose output carries a secret -> 0 used (a tool that is not a reader, a variable,
+  # /dev/null); 1 written to a file; 2 reaches the output of the whole line (the screen, at the top).
+  # Sets CRED_WHAT.
+  local n="$1" o p w via=""
+  while :; do
+    o="${_SO[$n]--}"
+    case "$o" in
+      0) return 0 ;;
+      '>')
+        if [ -n "$via" ]; then CRED_WHAT="written to a file through '$via'"; else CRED_WHAT="written to a file"; fi
+        return 1 ;;
+      '|'*)
+        n="${o#|}"
+        _sec_carrier "$n" || return 0
+        if [ "$_SEC_TEE" = 1 ]; then CRED_WHAT="written to a file by 'tee'"; return 1; fi
+        via="$_SEC_CMD"; continue ;;
+    esac
+    p="${_SP[$n]--1}"
+    if [ "$p" -lt 0 ]; then
+      if [ -n "$via" ]; then CRED_WHAT="shown through '$via'"; else CRED_WHAT="shown on the screen"; fi
+      return 2
+    fi
+    w="${_SPW[$n]}"
+    _sec_words "$p"
+    # VAR=$(…) before the command is kept in a variable (TOKEN=$(…) echo done shows nothing). After it, the
+    # command decides: export/local VAR=$(…) are not carriers, echo VAR=$(…) is
+    case "${_CW[$w]-}" in [A-Za-z_]*=*) [ "$w" -lt "$_SEC_S" ] && return 0 ;; esac
+    _sec_carrier "$p" || return 0
+    if [ "$_SEC_TEE" = 1 ]; then CRED_WHAT="written to a file by 'tee'"; return 1; fi
+    via="$_SEC_CMD"; n="$p"
+  done
+}
+
+sec_check_line() {
+  local depth="${2:-0}" kind a b c d out n rc l
+  # The candidate lines (SEC_LINES) come from cred_check_line of this same line, which reads the lists in the awk
+  # it runs anyway: no process of its own for a command line without one. The lines run by bash -c, eval or
+  # ssh are part of it.
+  if [ "$depth" = 0 ] && [ "${SEC_PICKED-}" != "$1" ]; then cred_check_line "$1" || true; fi
+  [ "${#SEC_LINES[@]}" -gt 0 ] || return 0
+  local _SW=() _SNW=() _SP=() _SPW=() _SO=() _SN=() _CW=() _SEC_S=0 _SEC_CMD="" _SEC_TEE=0 _SEC_INNER=""
+  out="$(printf '%s\n' "$1" | awk "$_SEC_AWK")"
+  while IFS=$'\t' read -r kind a b c d; do
+    case "$kind" in
+      W) _SW[a * 100000 + b]="$c"; _SNW[a]=$((b + 1)) ;;
+      N) _SN+=("$a"); _SP[a]="$b"; _SPW[a]="$c"; _SO[a]="$d" ;;
+    esac
+  done <<<"$out"
+  for n in ${_SN[@]+"${_SN[@]}"}; do
+    _sec_words "$n"
+    if _sec_is_secret; then
+      :
+    elif [ "$depth" -lt 4 ] && _sec_inner; then
+      sec_check_line "$_SEC_INNER" $((depth + 1)); rc=$?
+      [ "$rc" = 1 ] && return 1
+      [ "$rc" = 2 ] || continue
+    else
+      continue
+    fi
+    _sec_flow "$n"; rc=$?
+    case "$rc" in
+      1) return 1 ;;
+      2) [ "$depth" = 0 ] && return 1; return 2 ;;
+    esac
+  done
   return 0
 }

@@ -37,7 +37,21 @@ The lists:
 
 Exceptions that keep daily work going: the identity key of `scp`, `sftp` and `rsync` (`-i`, `-o IdentityFile=…`, `-e "ssh -i …"`), the destination of a copy (`cp .env.example .env`) and `sed -i` (it edits without showing). A `*`, `?` or `[` inside quotes or after `\` is text, as in the shell: `grep -o 'x.*' notes.md` passes, while `cat ~/.ssh/id_*` is blocked. The remote path of `scp`, `sftp` and `rsync` is the exception (`scp 'host:~/.ssh/id_*' .`), because the remote shell expands it. A quoted name is still compared as is: `find . -name '*.key' -exec cat {} \;` is blocked.
 
-What it does not stop, because it guards against mistakes, not an adversary: a reader missing from the list, a command that reads without naming the path (`cd ~/.aws && cat credentials`, `grep -r x .`), a script or heredoc that opens the file itself, a path built in a variable, and commands that print a secret without opening a file (`gh auth token`; planned). The sandbox of the `strict` profile covers the first ones.
+What it does not stop, because it guards against mistakes, not an adversary: a reader missing from the list, a command that reads without naming the path (`cd ~/.aws && cat credentials`, `grep -r x .`), a script or heredoc that opens the file itself, and a path built in a variable. The sandbox of the `strict` profile covers them.
+
+## Commands that show secrets
+
+Some commands print a secret without opening any file. `credential-guard` treats them like the files: **showing** the secret is blocked, **using** it passes, in every profile and mode, whatever packs you choose. Two kinds are on the lists: the credentials of the agent (`gh auth token`, `aws configure export-credentials`, `aws ecr get-login-password`, `kubectl config view --raw`, `kubectl create token`, `bw get password`) and the values of the secrets of applications (`aws secretsmanager get-secret-value`, `aws ssm get-parameter --with-decryption`, `kubectl get secret … -o yaml`). Listing or describing secrets passes (`kubectl get secrets`, `aws secretsmanager list-secrets`). `helm get values` and `terraform output` are not on the lists: they are daily work, like reading a `*.tfstate`.
+
+The guard follows where the output of the command goes:
+
+- Blocked: the screen (`gh auth token`), a file (`… > token.txt`, `… | tee token.txt`), or a reader on the way to either (`… | base64`, `… | jq -r .SecretString`, `echo "$(gh auth token)"`, `cat <(…)`).
+- Passes: piped into a tool that is not a reader (`aws ecr get-login-password | docker login --password-stdin …`, `kubectl get secret x -o yaml | kubectl apply -f -`), substituted into one (`curl -H "Authorization: Bearer $(gh auth token)" …`, `eval "$(aws configure export-credentials --format env)"`), kept in a variable (`TOKEN=$(…)`, `export TOKEN=$(…)`) or thrown away (`> /dev/null`).
+- It looks inside `bash -c '…'`, `eval`, `watch` and `ssh host '…'`: `ssh host gh auth token` shows the token here.
+
+The lists: `hooks/credential-guard/secret-commands` (`gh`, `bw`, `git credential`, the `docker-credential-*` helpers, the macOS keychain) and `packs/<name>/secret-commands` (aws, kubernetes). The readers are the same as for the files (`hooks/credential-guard/readers`), plus `echo`, `printf` and `tee`.
+
+What it does not stop: a secret already in a variable or in the environment (`echo $TOKEN`, `env`, `printenv`), a command missing from the lists, and a tool that is not a reader but prints what it gets. `kubectl get secret … -o name` is blocked too, because any `-o` of a Secret is.
 
 ## What stays in the core
 
@@ -58,12 +72,13 @@ All files are optional. Any other file name is an error (`tests/packs.sh`).
 | `destructive.rules` | `block-destructive-platform` | One `name\|regex` per line (extended regex, matched against the whole command). The name goes to the decision log. Placeholders: `<P>` start of a tool name (also after `/`, a quote or `$(`), `<S>` whitespace, `<G>` any tokens in the same command segment (never across `;`, `\|` or `&`), `<E>` end of a word. |
 | `credential-files` | `credential-guard`, `bin/ro`, `bin/link-harness` | One pattern per line: `~/<path>` (from the home directory) or `**/<name>` (that file name anywhere); `*` is any text. Each line also becomes a `Read(~/<path>)` or `Read(//**/<name>)` deny rule. |
 | `credential-readers` | `credential-guard` | One `<command>` or `<command> <word>` per line (a reader only when `<word>` is one of its arguments), like `hooks/credential-guard/readers`. |
+| `secret-commands` | `credential-guard` | One `<command> <word> …` per line: a command that prints a secret when all the words are among its arguments, in any order; `*` is any text (`aws ssm get-parameter* --with-decryption`). Like `hooks/credential-guard/secret-commands`. See "Commands that show secrets". |
 | `permissions.json` | `bin/link-harness`, `bin/doctor` | `{"deny": ["Bash(…)"], "ask": ["Bash(…)"]}`, Claude Code permission rules. They are merged into `~/.claude/settings.json` after the core ones. |
 | `tests.sh` | `tests/run`, `bin/doctor` | The pack's own tests, with the helpers of `tests/lib/pack-test.sh`: `ro_ok`/`ro_no`, `blk`/`alw`, `denied`/`asked`/`unruled`, `guarded`. |
 | `domains` | `bin/link-harness`, `bin/doctor` | Domains the sandbox of the `strict` profile allows when the pack is chosen, one per line: `host`, `*.domain` or `host:port` (`bin/lib/packs.sh` `packs_sandbox`). Only domains checked inside the sandbox; any other is refused (`strictAllowlist`). |
 | `README.md` | people | Optional notes. |
 
-Lines starting with `#` and empty lines are ignored in `guard-tools`, `destructive.rules`, `credential-files` and `credential-readers`.
+Lines starting with `#` and empty lines are ignored in `guard-tools`, `destructive.rules`, `credential-files`, `credential-readers` and `secret-commands`.
 
 ## Example
 

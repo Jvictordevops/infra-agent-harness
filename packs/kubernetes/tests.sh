@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2088  # '~/…' is passed to the helpers as the agent types it
+# shellcheck disable=SC2088,SC2016  # '~/…' and '$(…)' are passed to the helpers as the agent types them
 # Tests for the kubernetes pack: bin/ro reads, destructive commands, deny/ask rules and ro-guard. Runs nothing real.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -72,5 +72,30 @@ readdenied "~/.kube/config"
 credok "kubectl --kubeconfig ~/.kube/config get pods --context x"
 credok "KUBECONFIG=~/.kube/config kubectl get pods"
 credok "kubectl cp ns/pod:/var/log/app.log ./app.log"
+
+# Commands that print a secret (secret-commands): shown is blocked, used is not
+credblk "kubectl config view --raw"
+credblk "kubectl config view --raw=true --minify"
+credblk "kubectl config view --flatten > k.yaml"
+credblk "kubectl --context c config view --raw"
+credblk "kubectl create token default -n x"
+credblk "kubectl get secret app -o yaml"
+credblk "kubectl get secrets -A -o json"
+credblk "kubectl get secret/app -oyaml"
+credblk "kubectl get secret app --output=json"
+credblk "kubectl get secret app -o jsonpath='{.data.password}' | base64 -d"
+credblk "kubectl get configmap,secret -n x -o yaml"
+credblk "kubectl get secret app -o yaml > app-secret.yaml"
+credblk "kubectl get --raw /api/v1/namespaces/x/secrets/app"
+credblk 'echo "$(kubectl get secret app -o json)" > s.json'
+credok "kubectl get secrets"
+credok "kubectl get secrets -A"
+credok "kubectl describe secret app"
+credok "kubectl config view"
+credok "kubectl config view --minify"
+credok "kubectl get pods -o yaml"
+credok "kubectl get secret app -o yaml | kubectl apply -n other -f -"
+credok 'TOKEN=$(kubectl create token default)'
+credok "kubectl create secret generic app --from-literal=a=b"
 
 pack_done "kubernetes pack"

@@ -58,6 +58,7 @@ Generic notes for the agent tools the harness installs into (Claude Code, Claude
     - a download from a domain not listed (`npm install`, `pip install`, `curl`) fails until you add the domain;
   - `isolated` comes with the container (v0.2).
 - **Credential files:** in every profile and mode, `credential-guard` (PreToolUse on Bash, Read and Grep) blocks reading, copying or sending a credential file (`cat ~/.aws/credentials`, `cp ~/.kube/config /tmp`, `curl -T ~/.netrc …`, the Read tool on `.env`); using it passes (`ssh -i`, `--kubeconfig`, `source .env`). `bin/link-harness` also adds one `Read(…)` deny rule per file. Lists, exceptions and limits: `packs/README.md`, "Credential files".
+- **Commands that show secrets:** the same guard blocks a command that prints a secret (`gh auth token`, `aws configure export-credentials`, `kubectl get secret x -o yaml`) when its output ends on the screen, in a file or in a reader; piped into another tool (`| docker login --password-stdin`) or kept in a variable (`TOKEN=$(…)`) it passes. `packs/README.md`, "Commands that show secrets".
 - **Sub-agents:** the brief and the prompt say "only `bin/ro`". The hook applies to them too, because they share the session.
 
 ### Hook registration
