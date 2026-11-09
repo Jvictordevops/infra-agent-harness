@@ -64,7 +64,9 @@ check "training-unit (es): all headings in Spanish" '[ "$(grep -c "^## [0-9]\. "
 check "training-unit (en): all headings in English" 'grep -qx "## 1. The case we follow" <<<"$tu_en" && grep -qx "## 8. What you can ratify when done" <<<"$tu_en" && ! grep -q "{{VOC_" <<<"$tu_en"'
 check "training-unit (en): check-work prefixes match the template" 'for k in "$VOC_TU_CASE" ; do :; done; IAH_LANG=en bash -c ". \"$ROOT/bin/lib/vocab.sh\"; vocab_load; for p in \"\$VOC_TU_CASE\" \"\$VOC_TU_WALKTHROUGH\" \"\$VOC_TU_CONCEPTS\" \"\$VOC_TU_QUESTIONS\"; do grep -qF \"## \$p\" <<<\"$tu_en\" || exit 1; done"'
 check "training-unit (es): check-work prefixes match the template" 'IAH_LANG=es bash -c ". \"$ROOT/bin/lib/vocab.sh\"; vocab_load; for p in \"\$VOC_TU_CASE\" \"\$VOC_TU_WALKTHROUGH\" \"\$VOC_TU_CONCEPTS\" \"\$VOC_TU_QUESTIONS\"; do grep -qF \"## \$p\" <<<\"$tu_es\" || exit 1; done"'
-check "README keeps unfilled placeholders" '"$ROOT/bin/render-template" --repo "$TMP/en" README | grep -q "{{DATE}}"'
+# Output captured first: with pipefail, "render-template | grep -q" fails with SIGPIPE when grep exits early
+readme_out="$("$ROOT/bin/render-template" --repo "$TMP/en" README)"
+check "README keeps unfilled placeholders" 'grep -q "{{DATE}}" <<<"$readme_out"'
 check "unknown template is refused" '! "$ROOT/bin/render-template" --repo "$TMP/en" ../x 2>/dev/null'
 
 # --- banner regex ---------------------------------------------------------------

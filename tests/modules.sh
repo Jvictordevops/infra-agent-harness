@@ -6,6 +6,8 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/portable.sh
+. "$ROOT/tests/lib/portable.sh"   # b64
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP/home"; mkdir -p "$HOME"
@@ -85,6 +87,6 @@ check "doctor without evidence module: no evidence lines" '! grep -q "evidence:"
 out="$(IAH_MODULES=nope doc)"
 check "doctor: unknown module warns"              'grep -q "WARN  module .nope." <<<"$out"'
 printf '' > "$HOME/.config/infra-agent-harness/evidence.conf"
-check "doctor never prints key material"          '! grep -q "$(base64 -w0 "$TMP/key" 2>/dev/null | cut -c1-20)" <<<"$out"'
+check "doctor never prints key material"          '! grep -q "$(b64 "$TMP/key" | cut -c1-20)" <<<"$out"'
 
 if [ "$fail" = 0 ]; then echo "modules: all tests passed"; else echo "modules: tests FAILED"; exit 1; fi

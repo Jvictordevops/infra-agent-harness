@@ -98,20 +98,22 @@ fi
 # Values that look sensitive but are documentation placeholders
 ALLOW='(^|[^0-9])(000000000000|123456789012|111122223333|444455556666)([^0-9]|$)|@(example\.(com|org|net)|acme\.(com|example)|users\.noreply\.github\.com)|noreply@|(^|[^0-9])(10\.0\.0\.0|192\.168\.0\.0|172\.16\.0\.0)/'
 
+# Portable to bash 3.2 (macOS): no mapfile, and empty arrays expanded as ${a[@]+"${a[@]}"} under set -u.
+files=()
 if [ "$STAGED" = 1 ]; then
-  mapfile -t files < <(git diff --cached --name-only --diff-filter=ACMR -- "${paths[@]}")
+  while IFS= read -r f; do files+=("$f"); done < <(git diff --cached --name-only --diff-filter=ACMR -- ${paths[@]+"${paths[@]}"})
   show() { git show ":$1"; }
 else
-  mapfile -t files < <(git ls-files -- "${paths[@]}")
+  while IFS= read -r f; do files+=("$f"); done < <(git ls-files -- ${paths[@]+"${paths[@]}"})
   show() { cat -- "$1"; }
 fi
 
 found=0
-for f in "${files[@]}"; do
+for f in ${files[@]+"${files[@]}"}; do
   [ "$f" = "${DENYLIST#"$PWD"/}" ] && continue
   content="$(show "$f" 2>/dev/null)" || continue
   printf '%s' "$content" | grep -qI . || continue        # skip binary files
-  for rule in "${rules[@]}"; do
+  for rule in ${rules[@]+"${rules[@]}"}; do
     name="${rule%%|*}" pattern="${rule#*|}"
     hits="$(printf '%s\n' "$content" | grep -nE -- "$pattern" | grep -vE -- "$ALLOW" || true)"
     if [ -n "$hits" ]; then

@@ -29,7 +29,8 @@ new_home() { # $1 name -> HOME with a work repo; prints the path
   printf '%s' "$h"
 }
 lh() { local h="$1"; shift; (cd "$h/work" && HOME="$h" IAH_PLUGIN=1 LINK_HARNESS_WINDOWS=0 "$ROOT/bin/link-harness" "$@" 2>&1); }
-snap() { (cd "$1" && find . -printf '%p|%y|%l|%s|%T@\n' | sort && find . -type f -exec sha256sum {} + | sort); }
+# shellcheck source-path=SCRIPTDIR source=lib/portable.sh
+. "$ROOT/tests/lib/portable.sh"   # snap
 
 # 1. --dry-run writes nothing and lists what it would do
 H="$(new_home dry)"; before="$(snap "$H")"

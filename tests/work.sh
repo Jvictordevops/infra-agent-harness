@@ -6,6 +6,8 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/portable.sh
+. "$ROOT/tests/lib/portable.sh"   # sed_i
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 unset IAH_LANG IAH_REPO IAH_METHOD
@@ -69,7 +71,7 @@ cp "$R" "$R.orig"; printf '# d\n\n> **Corregido por:** [n](2030-01-02.decision-z
 git -C "$ES" add -A
 check "check-work (es): Spanish banner allowed" 'cw "$ES" --staged | tail -1 | grep -q " 0 error(s)"'
 git -C "$ES" reset -q --hard
-sed -i 's/alta/baja/' "$R"; git -C "$ES" add -A
+sed_i 's/alta/baja/' "$R"; git -C "$ES" add -A
 check "check-work (es): edited record is an error" 'cw "$ES" --staged | grep -q "committed record modified"'
 git -C "$ES" reset -q --hard
 
@@ -89,11 +91,11 @@ check "method light: exit 0"                '(cd "$M0" && "$ROOT/bin/check-work"
 check "method light: 0 errors"              'cw "$M0" | tail -1 | grep -q " 0 error(s)"'
 printf -- '- plain item\n' >> "$MW/ROADMAP/2030-01-02.md"
 check "method light: item without id is ERROR" 'cw "$M0" | grep -q "^ERROR.*without id"'
-sed -i '$d' "$MW/ROADMAP/2030-01-02.md"
+sed_i '$d' "$MW/ROADMAP/2030-01-02.md"
 printf -- '- **9.1** orphan twin\n' >> "$MW/ROADMAP/2030-01-02.md"
 check "method light: duplicate task id is ERROR" 'cw "$M0" | grep -q "^ERROR.*duplicate task id '"'"'9.1'"'"'"'
-sed -i '$d' "$MW/ROADMAP/2030-01-02.md"
-sed -i 's/^## Objectives$/## Objectives\n\n| **1** | dup | x |\n| **1** | dup | x |/' "$MW/README.md"
+sed_i '$d' "$MW/ROADMAP/2030-01-02.md"
+awk '{ print } /^## Objectives$/ { print ""; print "| **1** | dup | x |"; print "| **1** | dup | x |" }' "$MW/README.md" > "$MW/README.md.tmp" && mv "$MW/README.md.tmp" "$MW/README.md"
 check "method light: duplicate objective id is ERROR" 'cw "$M0" | grep -q "^ERROR.*Objectives: duplicate id '"'"'1'"'"'"'
 git -C "$M0" checkout -q -- . 2>/dev/null; nw "$M0" acme prj big --date 2030-01-03
 for i in $(seq 1 160); do echo "line $i" >> "$M0/work/acme/2030-01-03.big/README.md"; done

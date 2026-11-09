@@ -13,7 +13,8 @@ export GIT_CONFIG_NOSYSTEM=1 IAH_NO_FETCH=1 IAH_PLUGIN=0 LINK_HARNESS_WINDOWS=0
 export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=commit.gpgsign GIT_CONFIG_VALUE_0=false GIT_CONFIG_KEY_1=core.hooksPath GIT_CONFIG_VALUE_1=/dev/null
 unset IAH_REPO IAH_MODULES IAH_DENYLIST
 
-snap() { (cd "$1" && find . -printf '%p|%y|%l|%s|%T@\n' | sort && find . -type f -exec sha256sum {} + | sort); }
+# shellcheck source-path=SCRIPTDIR source=lib/portable.sh
+. "$ROOT/tests/lib/portable.sh"   # snap
 new_home() { # $1 name -> HOME with a work repo holding GLOBAL.md and a private denylist
   local h="$TMP/$1"; mkdir -p "$h/work/private" "$h/.claude"
   git init -q "$h/work"; echo "# global" > "$h/work/GLOBAL.md"
