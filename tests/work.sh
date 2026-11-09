@@ -8,7 +8,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source-path=SCRIPTDIR source=lib/portable.sh
 . "$ROOT/tests/lib/portable.sh"   # sed_i
-TMP="$(mktemp -d)"
+TMP="$(cd "$(mktemp -d)" && pwd -P)"   # physical path: macOS temp dirs sit behind the /var -> /private/var link
 trap 'rm -rf "$TMP"' EXIT
 unset IAH_LANG IAH_REPO IAH_METHOD
 export GIT_AUTHOR_NAME="Dana Doe" GIT_AUTHOR_EMAIL="dana@example.com"

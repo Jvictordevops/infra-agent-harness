@@ -4,7 +4,7 @@
 set -uo pipefail
 
 SCAN="$(cd "$(dirname "$0")/.." && pwd)/bin/denylist-scan"
-TMP="$(mktemp -d)"
+TMP="$(cd "$(mktemp -d)" && pwd -P)"   # physical path: macOS temp dirs sit behind the /var -> /private/var link
 trap 'rm -rf "$TMP"' EXIT
 git init -q "$TMP/r" && cd "$TMP/r" || exit 1
 printf 'contoso\n# comment\nintranet\\.corp\n' > "$TMP/denylist.txt"

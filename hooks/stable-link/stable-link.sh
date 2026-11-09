@@ -15,7 +15,9 @@ if [ -e "$LINK" ] && [ ! -L "$LINK" ]; then
 fi
 
 tmp="$LINK.tmp.$$"
-if mkdir -p "$(dirname "$LINK")" && ln -s "$ROOT" "$tmp" && mv -T "$tmp" "$LINK"; then :
+# Atomic replace of the link: mv -T (GNU) or mv -h (BSD/macOS); both refuse to move into the old target dir.
+if mkdir -p "$(dirname "$LINK")" && ln -s "$ROOT" "$tmp" \
+  && { mv -T "$tmp" "$LINK" 2>/dev/null || mv -fh "$tmp" "$LINK"; }; then :
 else
   rm -f "$tmp" 2>/dev/null
   echo "stable-link: could not update $LINK" >&2

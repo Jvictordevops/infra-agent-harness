@@ -6,7 +6,7 @@
 set -uo pipefail
 
 MOD="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"
+TMP="$(cd "$(mktemp -d)" && pwd -P)"   # physical path: macOS temp dirs sit behind the /var -> /private/var link
 trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP/home"; mkdir -p "$HOME"
 FILE="$MOD/backends/file.sh"; BW="$MOD/backends/bitwarden.sh"

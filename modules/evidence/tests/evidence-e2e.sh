@@ -7,7 +7,7 @@
 set -euo pipefail
 MOD="$(cd "$(dirname "$0")/.." && pwd)"
 HARNESS="$(cd "$MOD/../.." && pwd)"
-T="$(mktemp -d)"; SRV_PID=""
+T="$(cd "$(mktemp -d)" && pwd -P)"   # physical path: macOS temp dirs sit behind the /var -> /private/var link; SRV_PID=""
 cleanup() { [ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null; rm -rf "$T"; }
 trap cleanup EXIT
 [ -d "$HOME/.local/share/mise/shims" ] && export PATH="$HOME/.local/share/mise/shims:$PATH"

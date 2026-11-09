@@ -4,7 +4,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOOK="$ROOT/bin/hooks/commit-msg"
-TMP="$(mktemp -d)"
+TMP="$(cd "$(mktemp -d)" && pwd -P)"   # physical path: macOS temp dirs sit behind the /var -> /private/var link
 trap 'rm -rf "$TMP"' EXIT
 git init -q "$TMP/repo"
 cd "$TMP/repo" || exit 1

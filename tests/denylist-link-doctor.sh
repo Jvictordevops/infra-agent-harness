@@ -5,7 +5,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"
+TMP="$(cd "$(mktemp -d)" && pwd -P)"   # physical path: macOS temp dirs sit behind the /var -> /private/var link
 trap 'rm -rf "$TMP"' EXIT
 fail=0
 ko() { echo "FAIL: $1"; fail=1; }
@@ -84,7 +84,7 @@ H="$(new_home i)"; rm "$H/work/GLOBAL.md"
 ! grep -q "CLAUDE.md" <<<"$(doc "$H" | grep -v 'link-harness would')" || ko "CLAUDE.md check not skipped without GLOBAL.md"
 
 # 7. doctor: work repo behind its upstream (local refs only)
-H="$(new_home j)"; U="$TMP/upstream.git"; git init -q --bare "$U"
+H="$(new_home j)"; U="$TMP/upstream.git"; git init -q --bare --initial-branch=main "$U"   # not the user's init.defaultBranch
 git -C "$H/work" add -A; git -C "$H/work" -c user.name=t -c user.email=t@example.com commit -q -m one
 git -C "$H/work" remote add origin "$U"; git -C "$H/work" push -q origin HEAD:main 2>/dev/null
 git -C "$H/work" branch -q -u origin/main 2>/dev/null || git -C "$H/work" fetch -q origin && git -C "$H/work" branch -q -u origin/main
