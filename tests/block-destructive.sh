@@ -1,67 +1,58 @@
 #!/usr/bin/env bash
-# Tests for hooks/block-destructive-platform. Runs nothing real: only feeds commands to the hook.
+# Tests for hooks/block-destructive-platform: how it reads packs/*/destructive.rules and matches a command,
+# with a made-up pack 'demo' and no real pack. The real rules are tested in packs/<name>/tests.sh and the
+# floor in tests/floor.sh. Runs nothing real: only feeds commands to the hook.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-HOOK="$ROOT/hooks/block-destructive-platform/block-destructive-platform.sh"
-IAH_HOOK_LOG="$(mktemp)"; export IAH_HOOK_LOG   # keep test blocks out of the real decision log
-trap 'rm -f "$IAH_HOOK_LOG"' EXIT
+TMP="$(cd "$(mktemp -d)" && pwd -P)"
+trap 'rm -rf "$TMP"' EXIT
+IAH_HOOK_LOG="$TMP/hook-decisions.jsonl"; export IAH_HOOK_LOG   # keep test blocks out of the real decision log
+cp -R "$ROOT/hooks" "$TMP/"
+mkdir -p "$TMP/packs/demo"
+HOOK="$TMP/hooks/block-destructive-platform/block-destructive-platform.sh"
 fail=0
 
 decide() { jq -n --arg c "$1" '{tool_input:{command:$c}}' | "$HOOK"; }
 blk() { out="$(decide "$1")"; case "$out" in *'"block"'*) ;; *) echo "FAIL (should block): $1"; fail=1 ;; esac; }
 alw() { out="$(decide "$1")"; [ -z "$out" ] || { echo "FAIL (should pass): $1"; fail=1; }; }
 
-# The 8 variants of the 2026-11-07 finding (5 used to pass)
-blk "terraform destroy"
-blk "terraform -chdir=infra destroy"
-blk "kubectl delete ns x"
-blk "kubectl -n prod delete deploy api"
-blk "kubectl --context pro delete pod x"
-blk "helm -n x uninstall y"
-blk "aws s3 rm s3://b --recursive"
-blk "aws --profile pro ec2 terminate-instances --instance-ids i-1"
+# No pack: nothing is blocked and nothing fails
+alw "demo nuke"
 
-# More forms that must block
-blk "terraform -chdir=infra apply -auto-approve -destroy"
-blk "tofu destroy -target=module.x"
-blk "terragrunt destroy"
-blk "terraform state rm aws_s3_bucket.x"
-blk "terraform import aws_s3_bucket.x b"
-blk "cd infra && terraform destroy"
-blk "/usr/local/bin/kubectl delete pod x"
-blk "sudo kubectl drain node-1"
-blk "kubectl scale deploy x --replicas=0"
-blk "kubectl -n x scale deploy y --replicas 0"
-blk "kubectl rollout undo deploy/x"
-blk "ssh mac 'kubectl delete pod x'"
-blk "bash -c \"helm uninstall x\""
-blk "echo \$(kubectl delete pod x)"
-blk "helm delete x"
-blk "helmfile -e pro apply"
-blk "aws s3 --profile p rb s3://x"
-blk "aws iam delete-role --role-name x"
-blk "AWS_PROFILE=p aws ec2 terminate-instances --instance-ids i-1"
-blk "aws rds stop-db-instance --db-instance-identifier x"
+# Comments and empty lines are skipped; the last line may lack its newline
+printf '# demo rules\n\ndemo-nuke|<P>demo<G><S>nuke<E>\n# two words\ndemo-state-wipe|<P>demo<G><S>state<G><S>wipe<E>' \
+  > "$TMP/packs/demo/destructive.rules"
 
-# Must pass
-alw "kubectl get pods -n prod"
-alw "kubectl -n prod describe deploy api"
-alw "kubectl get pods | grep delete"
-alw "kubectl logs job/delete-old-data"
-alw "kubectl scale deploy x --replicas=3"
-alw "kubectl rollout status deploy/x"
-alw "terraform plan -destroy"
-alw "terraform -chdir=infra plan"
-alw "terraform state list"
-alw "terraform apply -auto-approve"
-alw "helm -n x list"
-alw "helm history x"
-alw "helmfile -e pro diff"
-alw "aws ec2 describe-instances --profile pro"
-alw "aws s3 ls s3://b/rm"
-alw "aws eks list-clusters"
+# The tool anywhere in the command, any tokens between tool and verb, never across ; | &
+blk "demo nuke"
+blk "demo -n prod nuke"
+blk "demo --context pro nuke"
+blk "demo -chdir=infra nuke"
+blk "/usr/local/bin/demo nuke"
+blk "sudo demo nuke"
+blk "DEMO_X=1 demo nuke"
+blk "cd infra && demo nuke"
+blk "ls | demo nuke x"
+blk "ssh mac 'demo nuke'"
+blk "bash -c \"demo nuke\""
+blk "echo \$(demo nuke)"
+blk "(demo nuke)"
+blk "demo nuke&&ls"
+blk "demo nuke; ls"
+blk "demo -x state -y wipe"
+alw "demo list"
+alw "demo list | grep nuke"
+alw "demo list; echo nuke"
+alw "demo logs job/nuke-old"
+alw "demo nukes"
+alw "xdemo nuke"
+alw "demo-x nuke"
+alw "demo state list"
+alw "echo demo"
 alw "git status"
-alw "echo terraform"
+
+# The rule name goes to the decision log
+grep -q '"reason":"demo-state-wipe"' "$IAH_HOOK_LOG" || { echo "FAIL: rule name not in the decision log"; fail=1; }
 
 if [ "$fail" = 0 ]; then echo "block-destructive: all tests passed"; else echo "block-destructive: tests FAILED"; exit 1; fi

@@ -39,16 +39,16 @@ Generic notes for the agent tools the harness installs into (Claude Code, Claude
   - `cat|head|tail|ls|find|grep|wc|stat` on paths under `RO_ROOTS` (default `$HOME/code`).
   - Never: secrets (`Secrets`, `get-secret-value`, `--with-decryption`), tokens, credentials or sensitive files. There is no shell inside: no pipes, redirections or chaining; filter the output (`jq`, `grep`) outside, locally.
   - Per-task limits: `RO_PROFILES=<profile> RO_CONTEXTS=<context> bin/ro …` (comma lists).
-  - `bin/ro --check …` validates without running (prints `ok` or the reason). Tests: `bash tests/ro.sh`.
+  - `bin/ro --check …` validates without running (prints `ok` or the reason). Tests: `bash tests/ro.sh` (core) and `packs/<name>/tests.sh`.
 - **Read-only mode:** `bin/ro mode on [reason]` creates `~/.config/infra-agent-harness/ro-mode` (`RO_MODE_FILE` overrides the path); `bin/ro mode status` shows it. While the mode is on, the `ro-guard` hook (PreToolUse on Bash) blocks cloud, cluster and remote-access tools (`aws`, `kubectl`, `helm`, `terraform`, `gh`, remote shells…) outside `bin/ro`, and also blocks switching the mode off: **only the user** runs `bin/ro mode off`, from a terminal. It protects from mistakes, not from an adversary (a script written on the fly is not inspected). With no mode file the hook does nothing.
 - **Sub-agents:** the brief and the prompt say "only `bin/ro`". The hook applies to them too, because they share the session.
 
 ### Hook registration
 
-- `bin/link-harness` merges `hooks/settings.base.json` and the `permissions.json` of every pack into `~/.claude/settings.json` (macOS, Linux, WSL). Manual install: registers `ro-guard` and `block-destructive-platform` as PreToolUse hooks on Bash. Plugin mode: the plugin registers them, so it adds no hooks and removes the entries of this harness under the stable link that an earlier run added (they would run twice; the file is backed up first, and an entry that points to another harness is kept with a warning). In both modes it adds the `permissions.deny` / `permissions.ask` rules (destructive commands denied; force push, hard reset, `apply` and `helm install/upgrade` ask first).
+- `bin/link-harness` merges `hooks/settings.base.json` and the `permissions.json` of every pack into `~/.claude/settings.json` (macOS, Linux, WSL). Manual install: registers `ro-guard` and `block-destructive-platform` as PreToolUse hooks on Bash. Plugin mode: the plugin registers them, so it adds no hooks and removes the entries of this harness under the stable link that an earlier run added (they would run twice; the file is backed up first, and an entry that points to another harness is kept with a warning). In both modes it adds the `permissions.deny` / `permissions.ask` rules (destructive commands denied; force push, hard reset, `terraform`/`tofu`/`terragrunt apply`, `kubectl apply` and `helm install/upgrade` ask first).
 - It only adds: it never removes anything, skips a hook whose script is already registered, and leaves a `settings.json.bak-<date>` copy when the file changes. It needs `jq`.
 - `hooks/confidence-nudge` (UserPromptSubmit) is not in the base file; register it yourself if you want it. It adds a reminder to end troubleshooting conclusions with a confidence level.
-- `bin/doctor` checks the registration (in plugin mode: registered by the plugin's `hooks/hooks.json`; WARN if the same guard is also in `~/.claude/settings.json`) and runs the guards' tests (`tests/block-destructive.sh`, `tests/packs.sh`, `tests/ro.sh`).
+- `bin/doctor` checks the registration (in plugin mode: registered by the plugin's `hooks/hooks.json`; WARN if the same guard is also in `~/.claude/settings.json`) and runs the guards' tests (`tests/block-destructive.sh`, `tests/floor.sh`, `tests/packs.sh`, `tests/ro.sh` and each `packs/<name>/tests.sh`).
 
 ### Decision log
 

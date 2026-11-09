@@ -106,8 +106,10 @@ missing="$(jq -r --argjson b "$(packs_permissions "$HARNESS" 2>/dev/null || echo
 [ "$missing" = 0 ] && ok "deny/ask rules of the core and packs ($packs) present" || warn "$missing deny/ask rule(s) of the core and packs ($packs) missing (bin/link-harness)"
 [ -x "$HARNESS/bin/hooks/commit-msg" ] && ok "commit-msg hook present" || fail "bin/hooks/commit-msg missing or not executable"
 tlog="$(mktemp)"
-for t in block-destructive commit-msg packs ro; do
-  IAH_HOOK_LOG="$tlog" bash "$HARNESS/tests/$t.sh" >/dev/null 2>&1 && ok "tests/$t.sh green" || fail "tests/$t.sh failing: run it to see which case"
+for t in tests/block-destructive.sh tests/commit-msg.sh tests/floor.sh tests/packs.sh tests/ro.sh "$HARNESS"/packs/*/tests.sh; do
+  t="${t#"$HARNESS"/}"
+  [ -f "$HARNESS/$t" ] || continue
+  IAH_HOOK_LOG="$tlog" bash "$HARNESS/$t" >/dev/null 2>&1 && ok "$t green" || fail "$t failing: run it to see which case"
 done
 rm -f "$tlog"
 

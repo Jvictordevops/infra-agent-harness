@@ -4,11 +4,27 @@
     "Bash(terraform * destroy)",
     "Bash(terraform * destroy *)",
     "Bash(terraform state rm *)",
-    "Bash(terraform * state rm *)"
+    "Bash(terraform * state rm *)",
+    "Bash(tofu destroy *)",
+    "Bash(tofu * destroy)",
+    "Bash(tofu * destroy *)",
+    "Bash(tofu state rm *)",
+    "Bash(tofu * state rm *)",
+    "Bash(terragrunt destroy *)",
+    "Bash(terragrunt * destroy)",
+    "Bash(terragrunt * destroy *)",
+    "Bash(terragrunt state rm *)",
+    "Bash(terragrunt * state rm *)"
   ],
   "ask": [
     "Bash(terraform apply *)",
     "Bash(terraform * apply)",
-    "Bash(terraform * apply *)"
+    "Bash(terraform * apply *)",
+    "Bash(tofu apply *)",
+    "Bash(tofu * apply)",
+    "Bash(tofu * apply *)",
+    "Bash(terragrunt apply *)",
+    "Bash(terragrunt * apply)",
+    "Bash(terragrunt * apply *)"
   ]
 }

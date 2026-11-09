@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Run every test script: tests/*.sh and modules/*/tests/*.sh. Same run as the CI.
+# Run every test script: tests/*.sh, packs/*/tests.sh and modules/*/tests/*.sh. Same run as the CI.
 # Usage: tests/run [pattern]   (pattern filters by path, e.g. tests/run denylist)
 set -uo pipefail
 cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)" || exit 2
 
 failed=() n=0
-for t in tests/*.sh modules/*/tests/*.sh; do
+for t in tests/*.sh packs/*/tests.sh modules/*/tests/*.sh; do
   [ -f "$t" ] || continue
   case "$t" in *"${1-}"*) ;; *) continue ;; esac
   n=$((n + 1)); start=$SECONDS

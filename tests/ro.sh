@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tests for bin/ro (allow-list) and hooks/ro-guard. Run nothing real: bin/ro --check and the hook with a temp mode file.
+# Tests for bin/ro (allow-list) and hooks/ro-guard, core only: git, gh, file readers, remote shells and how the
+# hook reads a command. The aws, kubectl and helm cases live in packs/<name>/tests.sh.
+# Run nothing real: bin/ro --check and the hook with a temp mode file.
 # The literal ~ in quotes is the point of some cases (bin/ro and the hook must expand it themselves).
 # shellcheck disable=SC2088,SC2015
 set -uo pipefail
@@ -18,45 +20,6 @@ fail=0
 
 ok() { if "$RO" --check "$@" >/dev/null 2>&1; then :; else echo "FAIL (should pass): $*"; fail=1; fi; }
 no() { if "$RO" --check "$@" >/dev/null 2>&1; then echo "FAIL (should deny): $*"; fail=1; fi; }
-
-ok aws eks describe-cluster --name X --region eu-west-1 --profile P
-ok aws ec2 describe-instance-type-offerings --profile P --filters Name=instance-type,Values=t3.micro
-ok aws sts get-caller-identity --profile P
-ok aws s3 ls --profile P
-ok aws ssm get-parameter --name /x --profile P
-no aws eks describe-cluster --name X
-no aws ec2 run-instances --profile P
-no aws s3 cp s3://a/b . --profile P
-no aws secretsmanager get-secret-value --secret-id x --profile P
-no aws ssm get-parameter --name /x --with-decryption --profile P
-no aws eks get-token --cluster-name X --profile P
-no aws ecr get-login-password --profile P
-no aws sts assume-role --profile P
-no aws --profile P eks describe-cluster
-RO_PROFILES=A,B no aws eks list-clusters --profile P
-RO_PROFILES=A,P ok aws eks list-clusters --profile P
-
-ok kubectl get pods -A --context c
-ok kubectl get externalsecrets,clustersecretstores -A --context c
-ok kubectl auth can-i list pods --context c
-no kubectl get pods
-no kubectl get secrets -A --context c
-no kubectl get secret/x -n y --context c
-no kubectl describe Secret x --context c
-no kubectl get cm,secrets --context c
-no kubectl delete pod x --context c
-no kubectl apply -f x --context c
-no kubectl exec x --context c
-no kubectl get pods -w --context c
-no kubectl get pods --as admin --context c
-no kubectl --context c get pods
-RO_CONTEXTS=a no kubectl get pods --context c
-
-ok helm list -A --kube-context c
-ok helm get metadata r -n n --kube-context c
-no helm get values r --kube-context c
-no helm upgrade r x --kube-context c
-no helm list -A
 
 ok git -C "$R" log -5 --oneline
 ok git -C "$R" branch -a
@@ -157,15 +120,17 @@ hok "ro aws eks list-clusters --profile P"
 hok "ro gh pr list -R owner/repo | head"
 hno "gh pr list -R owner/repo"
 hok "\"\${CLAUDE_PLUGIN_ROOT}/bin/ro\" aws sts get-caller-identity --profile P"
-hno "ro aws eks list-clusters --profile P; kubectl delete ns x"
+hno "ro gh pr list -R owner/repo; ssh other id"
 hno "ro mode off"
 hno "ssh other uname"
 hno "ssh -o BatchMode=yes other 'kubectl delete pod x'"
-hno "AWS_PROFILE=x aws s3 rm s3://a --recursive"
-hno "bin/ro aws eks list-clusters --profile P; kubectl delete ns x"
+hno "GH_TOKEN=x gh pr list -R owner/repo"
+hno "bin/ro git -C ~/code status; scp a other:b"
 hno "echo \$(ssh other id)"
-hno "bash -c 'kubectl apply -f x'"
-hno "timeout 10 helm upgrade x y"
+hno "bash -c 'ssh other id'"
+hno "timeout 10 ssh other id"
+hno "az vm list"
+hno "gcloud compute instances list"
 hno "/usr/bin/scp a other:b"
 hno "bin/ro mode off"
 hno "rm -f ~/.config/infra-agent-harness/ro-mode"

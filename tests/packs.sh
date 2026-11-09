@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tests for the rule packs (packs/README.md): every pack is well formed, and a pack is loaded just by being
-# under packs/ (a made-up pack 'demo' in a copy of the harness reaches bin/ro, both guards and the deny/ask rules).
+# Tests for the rule packs (packs/README.md): every pack is well formed, a pack is loaded just by being under
+# packs/ (a made-up pack 'demo' in a copy of the harness reaches bin/ro, both guards and the deny/ask rules), and
+# the helpers of tests/lib/pack-test.sh fail when they must.
 # Runs nothing real: bin/ro --check and the hooks fed with commands.
-# shellcheck disable=SC2015  # "check && check || ko": ko only reports
+# shellcheck disable=SC2015,SC2016  # "check && check || ko": ko only reports; helper_fails gets code in single quotes
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,7 +21,7 @@ for d in "$ROOT"/packs/*/; do
   d="${d%/}"; p="${d##*/}"; n=$((n + 1))
   [[ "$p" =~ ^[a-z0-9-]+$ ]] || ko "$p: pack name must be [a-z0-9-]"
   for f in "$d"/*; do
-    case "${f##*/}" in ro.sh|guard-tools|destructive.rules|permissions.json|domains|README.md) ;;
+    case "${f##*/}" in ro.sh|guard-tools|destructive.rules|permissions.json|tests.sh|domains|README.md) ;;
       *) ko "$p: unknown file ${f##*/} (packs/README.md)" ;; esac
   done
   if [ -f "$d/permissions.json" ]; then
@@ -89,6 +90,20 @@ out="$("$H/bin/ro" --check git -C "$TMP" status 2>&1)"; rc=$?
 printf 'ro_tool demo\n' > "$H/packs/demo/ro.sh"
 out="$("$H/bin/ro" --check demo list 2>&1)"; rc=$?
 [ "$rc" = 2 ] && grep_q -F "defines no check_demo" <<<"$out" || ko "ro: a tool without check_ was not refused (rc $rc): $out"
+
+# 4. The helpers of tests/lib/pack-test.sh fail when they must (or every pack test could pass by mistake)
+helper_fails() { # $@ = one helper call, with a wrong expectation
+  printf 'ROOT=%q\n. "$ROOT/tests/lib/pack-test.sh"\n%s\npack_done x\n' "$ROOT" "$*" > "$TMP/helper.sh"
+  if bash "$TMP/helper.sh" >/dev/null 2>&1; then ko "pack-test helper does not fail: $*"; fi
+}
+helper_fails 'ro_ok nope x'
+helper_fails 'ro_no git -C "$_PT_TMP" status'
+helper_fails 'blk "ls -la"'
+helper_fails 'alw "kubectl delete pod x"'
+helper_fails 'denied "ls -la"'
+helper_fails 'asked "ls -la"'
+helper_fails 'unruled "kubectl delete pod x"'
+helper_fails 'guarded "ls -la"'
 
 [ "$fail" = 0 ] && echo "packs: all tests passed"
 exit "$fail"

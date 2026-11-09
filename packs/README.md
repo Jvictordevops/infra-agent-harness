@@ -1,6 +1,6 @@
 # Rule packs
 
-A pack holds the safety rules for one technology. The guards and `bin/ro` hold no platform rules of their own: they read them from `packs/<name>/`. Every pack under `packs/` is active. Choosing packs per profile comes later.
+A pack holds the safety rules for one technology, and their tests. The guards and `bin/ro` hold no platform rules of their own: they read them from `packs/<name>/`. Every pack under `packs/` is active; choosing packs comes with the profiles, under the rule below.
 
 | Pack | Tools | `bin/ro` reads | Destructive commands blocked |
 |---|---|---|---|
@@ -8,6 +8,17 @@ A pack holds the safety rules for one technology. The guards and `bin/ro` hold n
 | `kubernetes` | `kubectl`, `eksctl`, `argocd`, `flux`, `k9s`, `kubectx`, `kubens` | `kubectl get`, `describe`, `logs`, `top`, `events`…, `--context` mandatory, never Secrets | `delete`, `drain`, `cordon`, `scale --replicas 0`, `rollout undo` |
 | `helm` | `helm`, `helmfile` | `list`, `status`, `history`, `get metadata`, `--kube-context` mandatory | `helm uninstall`, `helmfile apply\|destroy\|delete` |
 | `terraform` | `terraform`, `tofu`, `terragrunt` | none (`bin/ro` does not run them) | `destroy`, `import`, `apply -destroy`, `state rm\|push\|replace-provider` |
+
+Deny rules (Claude Code refuses the command) cover the main destructive verbs of each pack. Ask rules (Claude Code asks you first) cover `apply` of the three Terraform tools, `kubectl apply` and `helm install|upgrade`.
+
+## Choosing packs: only permissions go
+
+Choosing packs can only take away what is **allowed**, never what is **blocked**:
+
+- Always loaded from every installed pack: `destructive.rules`, the `deny` and `ask` rules of `permissions.json`, and `guard-tools`. Someone who does not use Kubernetes still has `kubectl delete` blocked; it costs nothing.
+- Only for the chosen packs: the `bin/ro` tools of `ro.sh` and, with the `strict` profile, the sandbox `domains`.
+
+`tests/floor.sh` holds the floor: destructive commands that only a person runs. Each one must be blocked by `block-destructive-platform` and match a `deny` rule. It fails if a change of packs drops any of them.
 
 ## What stays in the core
 
@@ -27,6 +38,7 @@ All files are optional. Any other file name is an error (`tests/packs.sh`).
 | `guard-tools` | `ro-guard` | One command name per line (`[a-z0-9_-]`). In read-only mode, these commands are blocked outside `bin/ro`. |
 | `destructive.rules` | `block-destructive-platform` | One `name\|regex` per line (extended regex, matched against the whole command). The name goes to the decision log. Placeholders: `<P>` start of a tool name (also after `/`, a quote or `$(`), `<S>` whitespace, `<G>` any tokens in the same command segment (never across `;`, `\|` or `&`), `<E>` end of a word. |
 | `permissions.json` | `bin/link-harness`, `bin/doctor` | `{"deny": ["Bash(…)"], "ask": ["Bash(…)"]}`, Claude Code permission rules. They are merged into `~/.claude/settings.json` after the core ones. |
+| `tests.sh` | `tests/run`, `bin/doctor` | The pack's own tests, with the helpers of `tests/lib/pack-test.sh`: `ro_ok`/`ro_no`, `blk`/`alw`, `denied`/`asked`/`unruled`, `guarded`. |
 | `domains` | — | Reserved for the sandbox allow-list of the `strict` profile. Not read yet. |
 | `README.md` | people | Optional notes. |
 
@@ -44,5 +56,7 @@ It blocks `aws s3 rm s3://b`, `aws --profile pro s3 rb s3://b` and `ssh host 'aw
 
 ## Tests
 
-- `tests/packs.sh` checks that each pack is well formed. It also adds a made-up pack to a copy of the harness and checks that `bin/ro`, both guards and the `deny`/`ask` merge pick it up.
-- `tests/ro.sh` and `tests/block-destructive.sh` test the rules themselves.
+- `packs/<name>/tests.sh`: the rules of each pack (reads of `bin/ro`, destructive commands, `deny`/`ask`, `ro-guard`).
+- `tests/floor.sh`: the floor, whatever packs there are.
+- `tests/packs.sh`: each pack is well formed, and a made-up pack in a copy of the harness reaches `bin/ro`, both guards and the `deny`/`ask` merge.
+- `tests/ro.sh` and `tests/block-destructive.sh`: the core and how the guards read a command, with no pack rule involved.
