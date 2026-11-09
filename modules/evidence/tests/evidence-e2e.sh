@@ -93,7 +93,9 @@ pw="$(sha256sum "$T/key" 2>/dev/null || shasum -a 256 "$T/key")"; pw="${pw:0:64}
 mkdir -p "$T/c/evidence/2026-11-03.x" && echo compat > "$T/c/evidence/2026-11-03.x/f.txt"
 tar -C "$T/c" -cf - evidence | zstd -q -19 -T0 -c | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "pass:$pw" -out "$T/plain.enc"
 "$EV" restore "$T/plain.enc" "$T/r4" >/dev/null && [ "$(cat "$T/r4/evidence/2026-11-03.x/f.txt")" = compat ] && ok "archive made with plain openssl opens" || ko "compat (openssl -> tool)"
-openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "pass:$pw" -in "$A" | zstd -dc | tar -tf - | grep -q 'data.json' \
+# Listing captured first: with pipefail, "tar -t | grep -q" fails with SIGPIPE when grep exits before tar is done
+listing="$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "pass:$pw" -in "$A" | zstd -dc | tar -tf -)" || listing=""
+grep -q 'data.json' <<<"$listing" \
   && ok "archive made by the tool opens with plain openssl" || ko "compat (tool -> openssl)"
 
 # Clipboard: LAN server and secrets backend, with fake local clipboard tools
