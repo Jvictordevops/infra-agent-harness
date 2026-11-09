@@ -120,6 +120,8 @@ cred_match() {
 # command; comments, heredoc bodies, here-strings and output redirection targets are not arguments.
 # shellcheck disable=SC2016  # an awk program: its $ are awk's
 _CRED_AWK='
+# A word of digits right before > or < is the number of a redirection (2>/dev/null), not an argument
+function fd_or_word() { if (word ~ /^[0-9]+$/) { word = ""; inword = 0 } else emit_word() }
 function emit_seg() { if (nw > 0) print "S"; nw = 0; nextr = 0; nextout = 0 }
 # Quick filter: only pieces that could be a credential path go to cred_match (a glob, a bare home directory, or
 # an anchor of a pattern inside). An anchor "*" (a pattern with no fixed piece) lets everything through.
@@ -177,7 +179,7 @@ END {
     if (c ~ /[;&|()`]/) { if (inword) emit_word(); emit_seg(); continue }
     if (c == "$" && substr(buf, i + 1, 1) == "(") { if (inword) emit_word(); emit_seg(); i++; continue }
     if (c == "<") {
-      if (inword) emit_word()
+      if (inword) fd_or_word()
       d = substr(buf, i + 1, 1)
       if (d == "<") {
         if (substr(buf, i + 2, 1) == "<") { i += 2; nextout = 1; continue }   # <<< here-string: data
@@ -188,7 +190,7 @@ END {
       nextr = 1; continue
     }
     if (c == ">") {
-      if (inword) emit_word()
+      if (inword) fd_or_word()
       if (substr(buf, i + 1, 1) == ">") i++
       if (substr(buf, i + 1, 1) == "&") i++
       if (substr(buf, i + 1, 1) == "(") { emit_seg(); i++; continue }

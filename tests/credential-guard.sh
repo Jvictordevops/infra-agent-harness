@@ -65,6 +65,8 @@ cat ~/.config/gh/hosts.yml
 cat ~/.git-credentials
 dd if=~/.ssh/id_rsa of=/tmp/x
 cp .env /tmp/backup
+cat .env 2>/dev/null
+cat 0<.env
 tar czf home.tgz ~/.ssh
 cp -r ~/.kube /tmp/
 rsync -a ~/ backup:/srv/home/
@@ -101,6 +103,9 @@ git commit -m "block cat ~/.aws/credentials"
 # cat ~/.aws/credentials
 ls -l # see the notes; cat ~/.aws/credentials
 cp .env.example .env
+cp .env.example .env 2>/dev/null; echo "rc=$?"
+cp .env.example .env 2>&1
+cp .env.example .env 1>/dev/null 2>&1
 sed -i 's/^DEBUG=.*/DEBUG=1/' .env
 sed -i.bak 's/a/b/' .env
 echo "DEBUG=1" >> .env
