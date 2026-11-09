@@ -5,7 +5,8 @@
 #
 #   ro_ok / ro_no <tool> <args…>   bin/ro --check passes / denies        (env prefixes work: RO_PROFILES=a ro_no …)
 #   blk / alw "<command>"          block-destructive-platform blocks it / lets it through
-#   denied / asked "<command>"     a permissions.deny / permissions.ask rule of the core or a pack matches it
+#   denied / asked "<command>"     a permissions.deny / permissions.ask rule of the core or a pack matches it,
+#                                  among the rules of the profile in force (PT_PROFILE_FILE; default standard)
 #   unruled "<command>"            no deny or ask rule matches it
 #   guarded "<command>"            ro-guard blocks it in read-only mode
 #   credblk / credok "<command>"   credential-guard blocks it / lets it through (reading vs using a credential)
@@ -24,7 +25,10 @@ IAH_HOOK_LOG="$_PT_TMP/hook-decisions.jsonl"; export IAH_HOOK_LOG   # keep test 
 RO_MODE_FILE="$_PT_TMP/ro-mode"; RO_ROOTS="$_PT_TMP"; export RO_MODE_FILE RO_ROOTS
 IAH_PROFILE_FILE="${PT_PROFILE_FILE:-$_PT_TMP/profile}"; export IAH_PROFILE_FILE   # not the machine's profile; default: all packs
 unset RO_PROFILES RO_CONTEXTS
-_PT_PERMS="$(packs_permissions "$ROOT")" || { echo "FAIL: cannot read the deny/ask rules"; exit 1; }
+# shellcheck source=bin/lib/profile.sh
+. "$ROOT/bin/lib/profile.sh"
+# The rules link-harness writes for the profile in force (permissive: no ask rules of the packs)
+_PT_PERMS="$(packs_profile_permissions "$ROOT" "$(profile_name)")" || { echo "FAIL: cannot read the deny/ask rules"; exit 1; }
 fail=0
 
 _pt_ko() { echo "FAIL: $*"; fail=1; }

@@ -5,6 +5,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(cd "$(mktemp -d)" && pwd -P)"   # physical path: macOS temp dirs sit behind the /var -> /private/var link
 trap 'rm -rf "$TMP"' EXIT
+export IAH_PROFILE_FILE="$TMP/profile"   # not the machine's profile; no file = standard
 S="$TMP/.claude/settings.json"
 fail=0
 check() { if jq -e "$1" "$S" >/dev/null; then :; else echo "FAIL: $2"; fail=1; fi; }
@@ -118,5 +119,41 @@ check '(.hooks // {}) | has("PreToolUse") | not' "empty PreToolUse key left behi
 rm -f "$S"
 (cd "$TMP/work" && IAH_PLUGIN=0 HOME="$TMP" LINK_HARNESS_WINDOWS=0 "$ROOT/bin/link-harness" --quiet >/dev/null 2>&1)
 check '[.hooks.PreToolUse[].hooks[].command] | length == 3' "manual mode: hooks not registered"
+
+# 9. Security profile: permissive removes the ask rules of the packs (listed), keeps the core asks, the user's own
+#    asks and every deny rule; standard adds them back.
+PACK_ASKS='["Bash(terraform apply *)", "Bash(tofu apply *)", "Bash(terragrunt * apply *)", "Bash(kubectl apply *)", "Bash(helm upgrade *)", "Bash(helm * install *)"]'
+nopack="(.permissions.ask // []) as \$a | $PACK_ASKS | all(. as \$r | \$a | index([\$r]) | not)"
+allpack="(.permissions.ask // []) as \$a | $PACK_ASKS | all(. as \$r | \$a | index([\$r]))"
+check "$allpack" "standard: ask rules of the packs installed"
+jq '.permissions.ask += ["Bash(npm publish *)"]' "$S" > "$TMP/s.json" && mv "$TMP/s.json" "$S"
+deny_before="$(jq -c '.permissions.deny' "$S")"
+printf 'profile=permissive\npacks=none\n' > "$IAH_PROFILE_FILE"
+cp "$S" "$TMP/settings.before"; b0="$(backups)"
+out="$(IAH_PLUGIN=0 HOME="$TMP" LINK_HARNESS_WINDOWS=0 "$ROOT/bin/link-harness" --dry-run 2>&1)"
+cmp -s "$S" "$TMP/settings.before" || { echo "FAIL: permissive --dry-run changed settings.json"; fail=1; }
+grep -qF "would: remove ask rule Bash(terraform apply *) from settings.json (security profile permissive)" <<<"$out" || { echo "FAIL: dry-run does not list the ask rules it would remove"; fail=1; }
+sleep 1
+out="$(IAH_PLUGIN=0 HOME="$TMP" LINK_HARNESS_WINDOWS=0 "$ROOT/bin/link-harness" 2>&1)"
+grep -qF "removing ask rule Bash(kubectl apply *) from settings.json (security profile permissive)" <<<"$out" || { echo "FAIL: permissive does not list the ask rules it removes"; fail=1; }
+[ "$(backups)" = "$((b0 + 1))" ] || { echo "FAIL: permissive made no backup"; fail=1; }
+check "$nopack" "permissive: ask rules of the packs left in settings.json"
+check '.permissions.ask | index(["Bash(git push --force*)"]) and index(["Bash(git reset --hard*)"])' "permissive: core ask rules (git) removed"
+check '.permissions.ask | index(["Bash(npm publish *)"])' "permissive: the user's own ask rule removed"
+[ "$(jq -c '.permissions.deny' "$S")" = "$deny_before" ] || { echo "FAIL: permissive changed the deny rules"; fail=1; }
+before="$(cat "$S")"; sleep 1
+out="$(IAH_PLUGIN=0 HOME="$TMP" LINK_HARNESS_WINDOWS=0 "$ROOT/bin/link-harness" 2>&1)"
+[ "$(cat "$S")" = "$before" ] || { echo "FAIL: permissive second run changed the file"; fail=1; }
+! grep -q "removing ask rule" <<<"$out" || { echo "FAIL: permissive second run lists removals"; fail=1; }
+printf 'profile=standard\n' > "$IAH_PROFILE_FILE"
+run
+check "$allpack" "back to standard: ask rules of the packs not added again"
+check '.permissions.ask | index(["Bash(npm publish *)"])' "back to standard: the user's own ask rule lost"
+[ "$(jq -c '.permissions.deny' "$S")" = "$deny_before" ] || { echo "FAIL: back to standard changed the deny rules"; fail=1; }
+# plugin mode follows the profile too
+printf 'profile=permissive\n' > "$IAH_PROFILE_FILE"
+prun --quiet >/dev/null
+check "$nopack" "plugin mode, permissive: ask rules of the packs left in settings.json"
+rm -f "$IAH_PROFILE_FILE"
 
 if [ "$fail" = 0 ]; then echo "link-harness settings: all tests passed"; else echo "link-harness settings: tests FAILED"; exit 1; fi

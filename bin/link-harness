@@ -35,6 +35,8 @@ ROOT="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")/.."
 . "$ROOT/bin/lib/conf.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/packs.sh
 . "$ROOT/bin/lib/packs.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/profile.sh
+. "$ROOT/bin/lib/profile.sh"
 QUIET=0; DRY_RUN=0
 for a in "$@"; do
   case "$a" in
@@ -189,14 +191,18 @@ fi
 # come from the plugin's hooks/hooks.json, so none are added, and the entries an earlier plugin-mode run
 # added (exactly <stable link>/hooks/<guard>/<guard>.sh) are removed, or they would run twice. A guard entry
 # that points anywhere else (another harness) is kept with a message.
+# SECURITY PROFILE (bin/lib/profile.sh): permissive removes the ask rules of the packs (exact matches, also one
+# the user wrote by hand) and lists each one; going back to standard or strict adds them again. Deny rules and
+# the core asks (git) are the same in every profile.
 merge_settings() {
   local base="$ROOT/hooks/settings.base.json" dst="$HOME/.claude/settings.json" new fresh=0 hroot="$ROOT" src
-  local plug=0 drop='[]' c perms
+  local plug=0 drop='[]' c perms prof r
   # Plugin mode: $ROOT is the versioned cache directory, deleted some days after an update. Hook commands
   # (manual mode only) and the entries to remove use the stable link.
   if plugin_mode; then plug=1; hroot="$(stable_link)"; fi
   command -v jq >/dev/null || { say "jq missing: settings not merged"; return 0; }
-  perms="$(packs_permissions "$ROOT")" || { say "cannot read the deny/ask rules of the core and packs: settings not merged"; return 0; }
+  prof="$(profile_name)"
+  perms="$(packs_profile_permissions "$ROOT" "$prof")" || { say "cannot read the deny/ask rules of the core and packs: settings not merged"; return 0; }
   src="$dst"
   if [ ! -s "$dst" ]; then
     fresh=1
@@ -214,10 +220,15 @@ merge_settings() {
       fi
     done < <(jq -r '.hooks.PreToolUse[]?.hooks[]?.command // empty | select(endswith("/ro-guard.sh") or endswith("/block-destructive-platform.sh") or endswith("/credential-guard.sh"))' "$dst" 2>/dev/null || true)
   fi
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    if [ "$DRY_RUN" = 1 ]; then would "remove ask rule $r from settings.json (security profile $prof)"
+    else say "removing ask rule $r from settings.json (security profile $prof)"; fi
+  done < <(jq -r --argjson perms "$perms" '(.permissions.ask // [])[] | select(. as $r | $perms.drop | index([$r]))' "$src" 2>/dev/null || true)
   new="$(jq --arg root "$hroot" --argjson plug "$plug" --argjson drop "$drop" --argjson perms "$perms" --slurpfile b "$base" '
     ($b[0] | del(._comment) | walk(if type == "string" then gsub("__ROOT__"; $root) else . end)) as $base
     | .permissions.deny = ((.permissions.deny // []) + ($perms.deny - (.permissions.deny // [])))
-    | .permissions.ask  = ((.permissions.ask  // []) + ($perms.ask  - (.permissions.ask  // [])))
+    | .permissions.ask  = (((.permissions.ask // []) - $perms.drop) as $a | $a + ($perms.ask - $a))
     | if $plug == 1 then
         if (.hooks.PreToolUse | type) == "array" then
           .hooks.PreToolUse |= map(

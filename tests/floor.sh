@@ -10,7 +10,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 if [ -z "${PT_PROFILE_FILE-}" ]; then
   _fl_tmp="$(mktemp -d)"
-  for _fl_p in 'profile=permissive|packs=none' 'profile=strict|packs=aws' 'profile=standard|packs=kubernetes,helm'; do
+  for _fl_p in 'profile=permissive|packs=none' 'profile=permissive' 'profile=strict|packs=aws' 'profile=standard|packs=kubernetes,helm'; do
     printf '%s\n' "$_fl_p" | tr '|' '\n' > "$_fl_tmp/profile"
     echo "with $_fl_p:"
     PT_PROFILE_FILE="$_fl_tmp/profile" bash "$0" || { rm -rf "$_fl_tmp"; exit 1; }
@@ -40,6 +40,20 @@ for c in "${FLOOR[@]}"; do
   blk "$c"
   denied "$c"
 done
+
+# git force push and hard reset ask in every profile; permissive only drops the asks of the packs.
+for c in "git push --force origin main" "git push origin main --force" "git push -f origin main" "git reset --hard HEAD~1"; do
+  asked "$c"
+done
+if [ "$(profile_name)" = permissive ]; then
+  for c in "terraform apply -auto-approve" "tofu apply" "terragrunt apply" "kubectl apply -f x.yaml" "helm upgrade api ./chart" "helm install api ./chart"; do
+    unruled "$c"
+  done
+else
+  for c in "terraform apply -auto-approve" "kubectl apply -f x.yaml" "helm upgrade api ./chart"; do
+    asked "$c"
+  done
+fi
 
 # Credential files: never read by an agent, whatever the profile and packs. Two locks: credential-guard (a
 # reader in Bash, and the Read tool) and a Read(…) deny rule. Core files first, then one per pack.

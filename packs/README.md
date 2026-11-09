@@ -9,7 +9,7 @@ A pack holds the safety rules for one technology, and their tests. The guards an
 | `helm` | `helm`, `helmfile` | `list`, `status`, `history`, `get metadata`, `--kube-context` mandatory | `helm uninstall`, `helmfile apply\|destroy\|delete` |
 | `terraform` | `terraform`, `tofu`, `terragrunt` | none (`bin/ro` does not run them) | `destroy`, `import`, `apply -destroy`, `state rm\|push\|replace-provider` |
 
-Deny rules (Claude Code refuses the command) cover the main destructive verbs of each pack. Ask rules (Claude Code asks you first) cover `apply` of the three Terraform tools, `kubectl apply` and `helm install|upgrade`.
+Deny rules (Claude Code refuses the command) cover the main destructive verbs of each pack. Ask rules (Claude Code asks you first) cover `apply` of the three Terraform tools, `kubectl apply` and `helm install|upgrade`; the `permissive` profile drops them (below).
 
 ## Choosing packs: only permissions go
 
@@ -17,6 +17,8 @@ You choose packs in the security profile: `bin/security-profile set standard --p
 
 - Always loaded from every installed pack: `destructive.rules`, the `deny` and `ask` rules of `permissions.json`, `guard-tools`, `credential-files` and `credential-readers`. Someone who does not use Kubernetes still has `kubectl delete` blocked; it costs nothing.
 - Only for the chosen packs: the `bin/ro` tools of `ro.sh` and, with the `strict` profile, the sandbox `domains`.
+
+The `permissive` profile is the one exception to "always loaded": it drops the `ask` rules of every pack, so Claude Code runs `apply`, `install` and `upgrade` without asking. The `deny` rules, the guards and the core `ask` rules (git) stay (`docs/tools.md`).
 
 `tests/floor.sh` holds the floor: destructive commands that only a person runs, and credential files no agent reads. Each destructive command must be blocked by `block-destructive-platform` and match a `deny` rule; each credential file must be blocked by `credential-guard` (in Bash and in the Read tool) and match a `Read(…)` deny rule. It runs with several profiles, the weakest with no pack chosen, and fails if any of them drops one. `tests/profile.sh` checks that `bin/ro` only runs the tools of the chosen packs.
 

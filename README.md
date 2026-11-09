@@ -127,7 +127,7 @@ Version 0.1 is in progress and has not been released. What is described above ex
 
 Planned, not implemented (do not rely on any of these):
 
-- Security profiles: what `permissive` and `strict` change, and `isolated`. Today `bin/security-profile` records the profile and chooses the packs whose tools `bin/ro` runs; every profile behaves as `standard`.
+- Security profiles: what `strict` changes (sandbox), and `isolated`. Today `bin/security-profile` records the profile and chooses the packs whose tools `bin/ro` runs; `permissive` drops the platform `ask` rules (`docs/tools.md`) and `strict` behaves as `standard`.
 - Environments: corporate and personal.
 - Packs for other clouds (GCP, Azure, on-prem) and a guide to write one.
 - IT managed policy.
