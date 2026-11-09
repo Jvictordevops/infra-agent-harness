@@ -15,6 +15,8 @@ HARNESS="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")/
 . "$HARNESS/bin/lib/vocab.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/packs.sh
 . "$HARNESS/bin/lib/packs.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/profile.sh
+. "$HARNESS/bin/lib/profile.sh"
 REPO="${IAH_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
 
 if [ "$(uname)" = "Darwin" ]; then MACHINE=macos; elif grep -qi microsoft /proc/version 2>/dev/null; then MACHINE=wsl; else MACHINE=linux; fi
@@ -39,6 +41,18 @@ if plugin_mode; then
 else
   ok "plugin mode: off (manual install)"
 fi
+
+# 1c. Security profile (bin/security-profile): always shown
+pf="$(profile_file)"; praw="$(profile_raw profile)"
+pchosen="$(profile_packs "$HARNESS" | paste -sd, -)"
+ok "security profile: $(profile_name) · packs: ${pchosen:-none} ($pf$([ -f "$pf" ] || echo ', missing: defaults'))"
+case "$praw" in
+  ''|permissive|standard|strict) ;;
+  isolated) warn "security profile 'isolated' comes with the container (v0.2); using standard: security-profile set <profile>" ;;
+  *) warn "security profile '$praw' is not valid; using standard: security-profile set permissive|standard|strict" ;;
+esac
+punknown="$(profile_unknown_packs "$HARNESS" | paste -sd, -)"
+[ -z "$punknown" ] || warn "packs= names packs that are not installed, ignored: $punknown"
 
 # 2. Repository with your works (optional)
 if [ -n "$REPO" ] && [ "$REPO" != "$HARNESS" ]; then
@@ -106,7 +120,7 @@ missing="$(jq -r --argjson b "$(packs_permissions "$HARNESS" 2>/dev/null || echo
 [ "$missing" = 0 ] && ok "deny/ask rules of the core and packs ($packs) present" || warn "$missing deny/ask rule(s) of the core and packs ($packs) missing (bin/link-harness)"
 [ -x "$HARNESS/bin/hooks/commit-msg" ] && ok "commit-msg hook present" || fail "bin/hooks/commit-msg missing or not executable"
 tlog="$(mktemp)"
-for t in tests/block-destructive.sh tests/commit-msg.sh tests/floor.sh tests/packs.sh tests/ro.sh "$HARNESS"/packs/*/tests.sh; do
+for t in tests/block-destructive.sh tests/commit-msg.sh tests/floor.sh tests/packs.sh tests/profile.sh tests/ro.sh "$HARNESS"/packs/*/tests.sh; do
   t="${t#"$HARNESS"/}"
   [ -f "$HARNESS/$t" ] || continue
   IAH_HOOK_LOG="$tlog" bash "$HARNESS/$t" >/dev/null 2>&1 && ok "$t green" || fail "$t failing: run it to see which case"

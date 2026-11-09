@@ -166,19 +166,33 @@ check_files() { # $1 tool, rest args
 }
 
 # Packs: each packs/<name>/ro.sh registers its tools with 'ro_tool <tool>' and defines check_<tool>
-# (it may use deny, opt_val, in_list and lower). Every pack under packs/ is loaded (packs/README.md).
+# (it may use deny, opt_val, in_list and lower). Every pack under packs/ is loaded, but only the tools of the
+# packs chosen in the security profile run (packs= in ~/.config/infra-agent-harness/profile; packs/README.md).
+# shellcheck source=bin/lib/packs.sh
+. "$HARNESS/bin/lib/packs.sh"
+# shellcheck source=bin/lib/profile.sh
+. "$HARNESS/bin/lib/profile.sh"
+TOOL_PACK=""   # " tool:pack tool:pack "
 ro_tool() {
   [[ "$1" =~ ^[a-z0-9]+$ ]] || { echo "ro: bad tool name '$1' in a pack" >&2; exit 2; }
   case " $CORE_TOOLS $PACK_TOOLS " in *" $1 "*) echo "ro: tool '$1' registered twice" >&2; exit 2 ;; esac
   PACK_TOOLS="${PACK_TOOLS:+$PACK_TOOLS }$1"
+  TOOL_PACK="$TOOL_PACK $1:$CUR_PACK"
 }
-set +f   # the only glob of this script (set -f above for the agent's arguments)
+set +f   # the only globs of this script (set -f above for the agent's arguments)
 for pack in "$HARNESS"/packs/*/ro.sh; do
   [ -f "$pack" ] || continue
+  CUR_PACK="$(basename "$(dirname "$pack")")"
   # shellcheck source=/dev/null
   . "$pack"
 done
+CHOSEN=" $(profile_packs "$HARNESS" | tr '\n' ' ') "
 set -f
+pack_of() { local tp; for tp in $TOOL_PACK; do [ "${tp%%:*}" = "$1" ] && { printf '%s' "${tp#*:}"; return; }; done; }
+CHOSEN_TOOLS=""
+for t in $PACK_TOOLS; do
+  case "$CHOSEN" in *" $(pack_of "$t") "*) CHOSEN_TOOLS="${CHOSEN_TOOLS:+$CHOSEN_TOOLS }$t" ;; esac
+done
 for t in $PACK_TOOLS; do
   declare -F "check_$t" >/dev/null || { echo "ro: a pack registers '$t' but defines no check_$t" >&2; exit 2; }
 done
@@ -187,12 +201,15 @@ validate() { # $@ = tool args…
   local tool="${1-}"
   [ -n "$tool" ] || usage
   shift
-  case " $PACK_TOOLS " in *" $tool "*) "check_$tool" "$@"; return ;; esac
+  case " $CHOSEN_TOOLS " in *" $tool "*) "check_$tool" "$@"; return ;; esac
+  case " $PACK_TOOLS " in
+    *" $tool "*) deny "tool '$tool' is in pack '$(pack_of "$tool")', not chosen in the security profile (security-profile show)" ;;
+  esac
   case "$tool" in
     git) check_git "$@" ;;
     gh) check_gh "$@" ;;
     cat|head|tail|ls|find|grep|wc|stat) check_files "$tool" "$@" ;;
-    *) deny "tool '$tool' not allowed ($(printf '%s' "$PACK_TOOLS $CORE_TOOLS" | sed 's/ /, /g'))" ;;
+    *) deny "tool '$tool' not allowed ($(printf '%s' "$CHOSEN_TOOLS $CORE_TOOLS" | sed 's/^ //; s/ /, /g'))" ;;
   esac
 }
 

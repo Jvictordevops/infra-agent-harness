@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # ro-guard.sh — PreToolUse(Bash). In read-only mode (bin/ro mode on) clouds, clusters and other
 # machines are reached only through bin/ro: blocks aws/kubectl/helm/terraform/ssh… (core + packs) outside it, and
-# switching the mode off (only the user does it, from a terminal). No mode file -> does nothing.
+# switching the mode off (only the user does it, from a terminal). No mode file -> only the next check runs.
+# In every mode it blocks changing the security profile (bin/security-profile set, the profile file).
 # Guards against mistakes, not against an adversary: a script written on the fly is not inspected.
 # Exit 2 = block (the reason goes to the agent on stderr).
 set -uo pipefail
@@ -10,9 +11,17 @@ set -uo pipefail
 
 MODE="${RO_MODE_FILE:-$HOME/.config/infra-agent-harness/ro-mode}"
 INPUT="$(cat)"   # always read stdin: the caller may fail writing to a closed pipe
-[ -f "$MODE" ] || exit 0
+CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)"
 
-CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""')"
+# Always, whatever the mode: the security profile belongs to the user (bin/security-profile, packs/README.md).
+# Blocks 'security-profile set', any command that names the profile file and its override variable.
+if printf '%s' "$CMD" | grep -Eq 'security-profile[[:space:]]+set|infra-agent-harness/profile([^a-z0-9_.-]|$)|IAH_PROFILE_FILE'; then
+  log_decision ro-guard "$CMD" "security profile"
+  echo "ro-guard: agents never change the security profile. Show it with 'security-profile show'; only the user sets it ('security-profile set …' in a terminal, then link-harness)." >&2
+  exit 2
+fi
+
+[ -f "$MODE" ] || exit 0
 # Core: other machines, GitHub, and the clouds without a pack (blocked by default). The packs add theirs
 # (packs/*/guard-tools, one name per line). Every pack under packs/ is active.
 FORBIDDEN='ssh|scp|sftp|rsync|sshfs|mosh|gh|az|gcloud'

@@ -36,7 +36,7 @@ Full detail and more diagrams: [docs/architecture.md](docs/architecture.md).
 
 ## What you get
 
-- **Agent guards** (`hooks/`). With the plugin they are active as soon as it is installed (`hooks/hooks.json`); in a manual install `bin/link-harness` registers them in `~/.claude/settings.json`. The profile is fixed to `standard` until profiles land.
+- **Agent guards** (`hooks/`). With the plugin they are active as soon as it is installed (`hooks/hooks.json`); in a manual install `bin/link-harness` registers them in `~/.claude/settings.json`. Only the user changes the security profile (`bin/security-profile`); see `docs/tools.md`.
   - `ro-guard`: in read-only mode, blocks `aws`, `kubectl`, `helm`, `terraform`, `ssh`... outside `bin/ro`.
   - `block-destructive-platform`: blocks `terraform destroy`, `kubectl delete`, `aws ... delete-*`, `helm uninstall`...
   - `permissions.deny` / `permissions.ask` rules from `hooks/settings.base.json` and the packs (plugins cannot ship them, so `bin/link-harness` merges them into `~/.claude/settings.json` in both modes).
@@ -61,7 +61,7 @@ claude plugin install infra-agent-harness@infra-agent-harness
 ```
 
 - The plugin provides the skills and puts `bin/` (`check-work`, `new-work`, `ro`, `link-harness`...) on the PATH of the agent's Bash tool. A `SessionStart` hook keeps `~/.local/share/infra-agent-harness/current` pointing at the installed version.
-- The guards (`ro-guard`, `block-destructive-platform`) are active as soon as the plugin is installed: its `hooks/hooks.json` registers them as PreToolUse hooks on Bash. The profile is fixed to `standard` until profiles land.
+- The guards (`ro-guard`, `block-destructive-platform`) are active as soon as the plugin is installed: its `hooks/hooks.json` registers them as PreToolUse hooks on Bash. The security profile defaults to `standard` (`bin/security-profile`).
 - Start one Claude Code session after installing: its `SessionStart` hook creates the stable link. Then, once, from your work repo (see the manual steps 2 and 3 below to create it), run `link-harness` from a terminal: it merges the `permissions.deny` / `permissions.ask` rules (plugins cannot ship them; it adds no hooks and removes the guard entries a previous plugin-mode run put in `~/.claude/settings.json`, backing the file up first), links `GLOBAL.md`, sets the repo's git hooks and handles Copilot. Plugin commands are only on the agent's PATH, so from a terminal use the plugin directory, for example `~/.local/share/infra-agent-harness/current/bin/link-harness` (the link exists after the first Claude Code session with the plugin). Copilot skill links always go through that stable link, never into the versioned plugin directory.
 - In plugin mode `link-harness` removes only the skill links in `~/.claude/skills` that point into this harness. Links that belong to another harness (for example a private work repo with its own skills) are kept, so a skill name may appear twice: prefixed (`infra-agent-harness:close-task`) and unprefixed. `link-harness --dry-run` prints what it would change and writes nothing; `bin/doctor` uses it and never writes.
 - On WSL the plugin mode does not copy skills into the Windows profile (it would overwrite skills of other harnesses): install the plugin from the Windows side with the same two `claude plugin` commands.
@@ -126,10 +126,9 @@ Version 0.1 is in progress and has not been released. What is described above ex
 
 Planned, not implemented (do not rely on any of these):
 
-- CI.
-- Security profiles: permissive, standard, strict, isolated.
+- Security profiles: what `permissive` and `strict` change, and `isolated`. Today `bin/security-profile` records the profile and chooses the packs whose tools `bin/ro` runs; every profile behaves as `standard`.
 - Environments: corporate and personal.
-- Provider packs.
+- Packs for other clouds (GCP, Azure, on-prem) and a guide to write one.
 - IT managed policy.
 - `doctor --security`.
 - Copilot hooks (today the hooks are registered for Claude Code only).

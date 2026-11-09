@@ -1,6 +1,6 @@
 # Rule packs
 
-A pack holds the safety rules for one technology, and their tests. The guards and `bin/ro` hold no platform rules of their own: they read them from `packs/<name>/`. Every pack under `packs/` is active; choosing packs comes with the profiles, under the rule below.
+A pack holds the safety rules for one technology, and their tests. The guards and `bin/ro` hold no platform rules of their own: they read them from `packs/<name>/`. Every pack under `packs/` is installed; the security profile chooses which ones you use, under the rule below.
 
 | Pack | Tools | `bin/ro` reads | Destructive commands blocked |
 |---|---|---|---|
@@ -13,12 +13,12 @@ Deny rules (Claude Code refuses the command) cover the main destructive verbs of
 
 ## Choosing packs: only permissions go
 
-Choosing packs can only take away what is **allowed**, never what is **blocked**:
+You choose packs in the security profile: `bin/security-profile set standard --packs aws,kubernetes` (`all`, the default, or `none` also work; `docs/tools.md`). Choosing packs can only take away what is **allowed**, never what is **blocked**:
 
 - Always loaded from every installed pack: `destructive.rules`, the `deny` and `ask` rules of `permissions.json`, and `guard-tools`. Someone who does not use Kubernetes still has `kubectl delete` blocked; it costs nothing.
 - Only for the chosen packs: the `bin/ro` tools of `ro.sh` and, with the `strict` profile, the sandbox `domains`.
 
-`tests/floor.sh` holds the floor: destructive commands that only a person runs. Each one must be blocked by `block-destructive-platform` and match a `deny` rule. It fails if a change of packs drops any of them.
+`tests/floor.sh` holds the floor: destructive commands that only a person runs. Each one must be blocked by `block-destructive-platform` and match a `deny` rule. It runs with several profiles, the weakest with no pack chosen, and fails if any of them drops one. `tests/profile.sh` checks that `bin/ro` only runs the tools of the chosen packs.
 
 ## What stays in the core
 

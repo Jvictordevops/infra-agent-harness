@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# security-profile — show or set the security profile of this machine and the packs it uses.
+# Usage:
+#   security-profile [show]                           the profile, the chosen packs and the file
+#   security-profile set <profile> [--packs <list>]   only the user, from a terminal (ro-guard blocks agents)
+#     <profile>  permissive | standard | strict       ('isolated' comes with the container, v0.2)
+#     <list>     all | none | comma list of installed packs (aws,kubernetes); kept as it is when omitted
+# After 'set', run link-harness so ~/.claude/settings.json follows the profile.
+# Profiles and packs: docs/tools.md and packs/README.md. File: ~/.config/infra-agent-harness/profile.
+set -euo pipefail
+
+HARNESS="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/packs.sh
+. "$HARNESS/bin/lib/packs.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/profile.sh
+. "$HARNESS/bin/lib/profile.sh"
+
+usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+die() { echo "security-profile: $*" >&2; exit 2; }
+list() { tr '\n' ',' | sed 's/,$//; s/,/, /g'; }
+
+show() {
+  local f chosen raw unknown
+  f="$(profile_file)"
+  chosen="$(profile_packs "$HARNESS" | list)"
+  echo "profile: $(profile_name)"
+  echo "packs:   ${chosen:-none} (installed: $(packs_names "$HARNESS" | list))"
+  if [ -f "$f" ]; then echo "file:    $f"; else echo "file:    $f (missing: defaults)"; fi
+  raw="$(profile_raw profile)"
+  case "$raw" in ''|permissive|standard|strict) ;; *) echo "warning: profile '$raw' is not valid; using standard" >&2 ;; esac
+  unknown="$(profile_unknown_packs "$HARNESS" | list)"
+  [ -z "$unknown" ] || echo "warning: packs not installed, ignored: $unknown" >&2
+}
+
+set_profile() {
+  local p="${1-}" packs n f tmp before
+  [ -n "$p" ] || usage
+  shift
+  case "$p" in
+    permissive|standard|strict) ;;
+    isolated) die "'isolated' comes with the container (v0.2); choose permissive, standard or strict" ;;
+    *) die "unknown profile '$p' (permissive, standard, strict)" ;;
+  esac
+  packs="$(profile_raw packs)"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --packs) [ $# -ge 2 ] || usage; packs="$(printf '%s' "$2" | tr -d ' \t')"; shift 2 ;;
+      --packs=*) packs="$(printf '%s' "${1#--packs=}" | tr -d ' \t')"; shift ;;
+      *) usage ;;
+    esac
+  done
+  case "$packs" in
+    ''|all|none) ;;
+    *) for n in $(printf '%s' "$packs" | tr ',' ' '); do
+         if ! [[ "$n" =~ ^[a-z0-9-]+$ ]] || [ ! -d "$HARNESS/packs/$n" ]; then
+           die "pack '$n' is not installed ($(packs_names "$HARNESS" | list))"
+         fi
+       done ;;
+  esac
+  f="$(profile_file)"
+  before="$(profile_name)"
+  mkdir -p "$(dirname "$f")"
+  tmp="$(mktemp "$f.XXXXXX")"
+  { echo "# Security profile of this machine. Change it with 'security-profile set', then run link-harness."
+    echo "profile=$p"
+    [ -z "$packs" ] || echo "packs=$packs"
+  } > "$tmp"
+  chmod 644 "$tmp"
+  mv -f "$tmp" "$f"
+  echo "security-profile: $before -> $p"
+  show
+  echo "next: run link-harness so ~/.claude/settings.json follows the profile"
+}
+
+case "${1-show}" in
+  show) [ $# -le 1 ] || usage; show ;;
+  set) shift; set_profile "$@" ;;
+  -h|--help) usage ;;
+  *) usage ;;
+esac

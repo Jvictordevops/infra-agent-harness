@@ -19,6 +19,7 @@ _PT_TMP="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$_PT_TMP"' EXIT
 IAH_HOOK_LOG="$_PT_TMP/hook-decisions.jsonl"; export IAH_HOOK_LOG   # keep test blocks out of the real decision log
 RO_MODE_FILE="$_PT_TMP/ro-mode"; RO_ROOTS="$_PT_TMP"; export RO_MODE_FILE RO_ROOTS
+IAH_PROFILE_FILE="${PT_PROFILE_FILE:-$_PT_TMP/profile}"; export IAH_PROFILE_FILE   # not the machine's profile; default: all packs
 unset RO_PROFILES RO_CONTEXTS
 _PT_PERMS="$(packs_permissions "$ROOT")" || { echo "FAIL: cannot read the deny/ask rules"; exit 1; }
 fail=0
