@@ -9,8 +9,10 @@
 #   cred_read_rules <harness>  the same patterns as Claude Code deny rules, JSON array: Read(~/…), Read(//**/…)
 #   cred_load <harness>        loads the patterns and the readers (core hooks/credential-guard/readers +
 #                              packs/*/credential-readers) into CRED_PATTERNS and CRED_READERS
-#   cred_match <path>          0 if <path> is a credential file, a glob that would match one (~/.aws/*) or a
+#   cred_match <path> [lit]    0 if <path> is a credential file, a glob that would match one (~/.aws/*) or a
 #                              directory that holds one (~/.aws, ~); sets CRED_HIT to the pattern. Needs cred_load.
+#                              With lit not empty, its * ? [ are plain text (they were quoted in the command, so
+#                              the shell does not expand them): only the name itself counts, not what it would match.
 #   cred_check_line <command>  0 if the command line only uses credentials; 1 if it reads, copies or sends one
 #                              (sets CRED_HIT and CRED_WHAT). Needs cred_load.
 #
@@ -72,7 +74,7 @@ cred_load() {
 _cred_has_glob() { case "$1" in *[\*\?\[]*) return 0 ;; esac; return 1; }
 
 cred_match() {
-  local n="$1" p x base sample h='/~HOME~/'
+  local n="$1" lit="${2-}" p x base sample h='/~HOME~/'
   # shellcheck disable=SC2088,SC2016  # literal "~/", "$HOME" and "${HOME}" as typed in a command
   case "$n" in
     '~'|'$HOME'|'${HOME}'|"$HOME") n="${h%/}" ;;
@@ -94,7 +96,7 @@ cred_match() {
         case "$x" in "$n"/*) CRED_HIT="$p"; return 0 ;; esac
         # a glob in the command that would reach the file: ~/.aws/*, /home/u/.ssh/id_*; not one that starts with
         # a glob (*/*), which would match anything
-        if _cred_has_glob "$n" && ! _cred_has_glob "${n:0:1}"; then
+        if [ -z "$lit" ] && _cred_has_glob "$n" && ! _cred_has_glob "${n:0:1}"; then
           sample="${x//\*/x}"
           # shellcheck disable=SC2053
           if [[ "$h$sample" == $n || "$sample" == $n || "/u/$sample" == $n ]]; then CRED_HIT="$p"; return 0; fi
@@ -104,7 +106,7 @@ cred_match() {
         # shellcheck disable=SC2053
         if [[ "$base" == $x ]]; then CRED_HIT="$p"; return 0; fi
         case "$base" in *[!\*\?]*) ;; *) continue ;; esac   # a bare '*' or '?*' names no file in particular
-        if _cred_has_glob "$base"; then
+        if [ -z "$lit" ] && _cred_has_glob "$base"; then
           sample="${x//\*/x}"
           # shellcheck disable=SC2053
           if [[ "$sample" == $base ]]; then CRED_HIT="$p"; return 0; fi
@@ -115,35 +117,42 @@ cred_match() {
 }
 
 # Tokenizer: the command line on stdin -> one line per word ('W<TAB>index<TAB>word'), per path-like piece of
-# a word ('C<TAB>index<TAB>flag<TAB>piece', flag r = read with '<', s = sent as @path or file://path, - = plain
-# argument) and 'S' at the end of each simple command. Quotes are honoured; ; & | ( ) ` $( <( and newlines end a
-# command; comments, heredoc bodies, here-strings and output redirection targets are not arguments.
+# a word ('C<TAB>index<TAB>flag<TAB>piece<TAB>lit', flag r = read with '<', s = sent as @path or file://path,
+# - = plain argument; lit l = its * ? [ are all quoted or escaped, so plain text, else -) and 'S' at the end of
+# each simple command. Quotes are honoured; ; & | ( ) ` $( <( and newlines end a command; comments, heredoc
+# bodies, here-strings and output redirection targets are not arguments.
 # shellcheck disable=SC2016  # an awk program: its $ are awk's
 _CRED_AWK='
 # A word of digits right before > or < is the number of a redirection (2>/dev/null), not an argument
 function fd_or_word() { if (word ~ /^[0-9]+$/) { word = ""; inword = 0 } else emit_word() }
 function emit_seg() { if (nw > 0) print "S"; nw = 0; nextr = 0; nextout = 0 }
-# Quick filter: only pieces that could be a credential path go to cred_match (a glob, a bare home directory, or
-# an anchor of a pattern inside). An anchor "*" (a pattern with no fixed piece) lets everything through.
-function maybe(p,   i) {
+# A quoted or escaped * ? [ is text, not a glob (grep -o "x.*"): kept as \001 \002 \003 inside the word until
+# the word is emitted, so the pieces know which of their globs the shell would expand
+function lit(c) { return c == "*" ? "\001" : c == "?" ? "\002" : c == "[" ? "\003" : c }
+function unlit(s) { gsub("\001", "*", s); gsub("\002", "?", s); gsub("\003", "[", s); return s }
+# Quick filter: only pieces that could be a credential path go to cred_match (an unquoted glob in raw, a bare
+# home directory, or an anchor of a pattern inside). An anchor "*" (a pattern with no fixed piece) lets
+# everything through.
+function maybe(p, raw,   i) {
   sub(/\/+$/, "", p)
-  if (p ~ /[*?[]/ || p == "~" || p == "$HOME" || p == "${HOME}" || p == home) return 1
+  if (raw ~ /[*?[]/ || p == "~" || p == "$HOME" || p == "${HOME}" || p == home) return 1
   for (i = 1; i <= nanch; i++) if (anch[i] == "*" || index(p, anch[i]) > 0) return 1
   return 0
 }
 BEGIN { nanch = split(anchors, anch, "\n"); if (anch[nanch] == "") nanch-- }
-function emit_word(   w, t, n, i, parts, p, flag) {
+function emit_word(   w, t, n, i, parts, p, pr, flag, l) {
   w = word; word = ""; inword = 0
-  if (hdpend) { hdm = w; sub(/^-/, "", hdm); hdpend = 0; return }
+  if (hdpend) { hdm = unlit(w); sub(/^-/, "", hdm); hdpend = 0; return }
   if (nextout) { nextout = 0; return }
   gsub(/[\t\n]/, " ", w)
-  print "W\t" nw "\t" w
+  print "W\t" nw "\t" unlit(w)
   t = w; gsub(/file:\/\//, "@", t)
   n = split(t, parts, /[ \047"=:,()<>;|&`]/)
   for (i = 1; i <= n; i++) {
     p = parts[i]; flag = nextr ? "r" : "-"
     if (substr(p, 1, 1) == "@") { flag = "s"; sub(/^@+/, "", p) }
-    if (p != "" && maybe(p)) print "C\t" nw "\t" flag "\t" p
+    pr = unlit(p); l = (p != pr && p !~ /[*?[]/) ? "l" : "-"
+    if (pr != "" && maybe(pr, p)) print "C\t" nw "\t" flag "\t" pr "\t" l
   }
   nextr = 0; nw++
 }
@@ -152,13 +161,13 @@ END {
   L = length(buf); q = ""; word = ""; inword = 0; nw = 0; nextr = 0; nextout = 0; hdpend = 0; hdm = ""
   for (i = 1; i <= L; i++) {
     c = substr(buf, i, 1)
-    if (q == "\047") { if (c == "\047") q = ""; else word = word c; continue }
+    if (q == "\047") { if (c == "\047") q = ""; else word = word lit(c); continue }
     if (q == "\"") {
       if (c == "\\" && i < L) { d = substr(buf, i + 1, 1); if (d ~ /["\\$`]/) { word = word d; i++; continue } }
-      if (c == "\"") q = ""; else word = word c
+      if (c == "\"") q = ""; else word = word lit(c)
       continue
     }
-    if (c == "\\" && i < L) { i++; d = substr(buf, i, 1); if (d != "\n") { word = word d; inword = 1 }; continue }
+    if (c == "\\" && i < L) { i++; d = substr(buf, i, 1); if (d != "\n") { word = word lit(d); inword = 1 }; continue }
     if (c == "\047" || c == "\"") { q = c; inword = 1; continue }
     if (c == "#" && !inword) { while (i < L && substr(buf, i + 1, 1) != "\n") i++; continue }
     if (c == " " || c == "\t") { if (inword) emit_word(); continue }
@@ -231,9 +240,9 @@ _cred_join() { # $1 first index: words of _CW from there, joined by spaces
   printf '%s' "${out# }"
 }
 
-# Evaluates one simple command (_CW words, _CI/_CF/_CP candidates); $1 depth. 1 = reads a credential.
+# Evaluates one simple command (_CW words, _CI/_CF/_CP/_CL candidates); $1 depth. 1 = reads a credential.
 _cred_segment() {
-  local depth="$1" s=0 cmd k i reader=-1 host
+  local depth="$1" s=0 cmd k i reader=-1 host lit
   while [ "$s" -lt "${#_CW[@]}" ]; do
     case "${_CW[$s]}" in
       [A-Za-z_]*=*|sudo|env|command|exec|time|nohup|nice|xargs|'{'|'}'|'!'|if|then|else|elif|do|while|until|-*) s=$((s + 1)) ;;
@@ -263,7 +272,11 @@ _cred_segment() {
     esac
   fi
   for ((i = 0; i < ${#_CP[@]}; i++)); do
-    cred_match "${_CP[$i]}" || continue
+    # A quoted glob is text (grep -o 'x.*'), except in the remote path of a copy (scp 'host:~/.ssh/id_*' .):
+    # the remote shell expands it
+    lit=""; [ "${_CL[$i]-}" = l ] && lit=1
+    case "$cmd" in scp|sftp|rsync) case "${_CW[${_CI[$i]}]-}" in *:*) lit="" ;; esac ;; esac
+    cred_match "${_CP[$i]}" "$lit" || continue
     case "${_CF[$i]}" in
       r) CRED_WHAT="read with '<'"; return 1 ;;
       s) CRED_WHAT="sent as @file or file://"; return 1 ;;
@@ -288,14 +301,14 @@ _cred_segment() {
 }
 
 cred_check_line() {
-  local depth="${2:-0}" kind a b c out
-  local _CW=() _CI=() _CF=() _CP=()
+  local depth="${2:-0}" kind a b c d out
+  local _CW=() _CI=() _CF=() _CP=() _CL=()
   out="$(printf '%s\n' "$1" | awk -v anchors="$CRED_ANCHORS" -v home="$HOME" "$_CRED_AWK")"
-  while IFS=$'\t' read -r kind a b c; do
+  while IFS=$'\t' read -r kind a b c d; do
     case "$kind" in
       W) _CW[a]="$b" ;;
-      C) _CI+=("$a"); _CF+=("$b"); _CP+=("$c") ;;
-      S) _cred_segment "$depth" || return 1; _CW=() _CI=() _CF=() _CP=() ;;
+      C) _CI+=("$a"); _CF+=("$b"); _CP+=("$c"); _CL+=("$d") ;;
+      S) _cred_segment "$depth" || return 1; _CW=() _CI=() _CF=() _CP=() _CL=() ;;
     esac
   done <<<"$out"
   return 0

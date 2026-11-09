@@ -71,6 +71,15 @@ tar czf home.tgz ~/.ssh
 cp -r ~/.kube /tmp/
 rsync -a ~/ backup:/srv/home/
 grep -r token ~/.config
+cat "$HOME"/.ssh/id_*
+cat "$HOME/.ssh/id_"*
+grep -o x.* f.md
+bash -c "cat ~/.ssh/id_*"
+ssh host "cat ~/.ssh/id_*"
+find . -name '*.key' -exec cat {} \;
+scp 'host:~/.ssh/id_*' .
+rsync -a "host:~/.aws/cred*" .
+grep -c 'x.*' f.md && cat ~/.aws/credentials
 EOF
 
 # --- Use, list, change mode, or not a credential: passes
@@ -117,6 +126,16 @@ cat ~/.ssh/config
 ls ~/.ssh ~/.aws
 du -sh ~
 cp notes.txt ~/.ssh/
+grep -o 'x.*' f.md
+grep -o 'Hecha el .*' f.md
+grep -o "x.*" f.md
+grep -n '.env.*=' notes.md
+grep -rn '~/.ssh/*' docs/
+grep -o x\.\* f.md
+rg -n 'foo.*bar' src/
+perl -ne 'print if /a.*b/' f.md
+bash -c "grep -o 'x.*' f.md"
+ssh host "grep -o 'x.*' f.md"
 EOF
 
 # Heredoc bodies and here-strings are data, not commands

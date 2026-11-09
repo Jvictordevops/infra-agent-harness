@@ -35,7 +35,7 @@ The lists:
 - `hooks/credential-guard/readers`: the commands that read, copy or send. If one gets in the way of your daily work, remove its line; add one when you find a reader that is missing.
 - Each pack adds its `credential-files` and, when it has readers of its own, `credential-readers` (`aws s3 cp`, `kubectl cp`).
 
-Exceptions that keep daily work going: the identity key of `scp`, `sftp` and `rsync` (`-i`, `-o IdentityFile=…`, `-e "ssh -i …"`), the destination of a copy (`cp .env.example .env`) and `sed -i` (it edits without showing).
+Exceptions that keep daily work going: the identity key of `scp`, `sftp` and `rsync` (`-i`, `-o IdentityFile=…`, `-e "ssh -i …"`), the destination of a copy (`cp .env.example .env`) and `sed -i` (it edits without showing). A `*`, `?` or `[` inside quotes or after `\` is text, as in the shell: `grep -o 'x.*' notes.md` passes, while `cat ~/.ssh/id_*` is blocked. The remote path of `scp`, `sftp` and `rsync` is the exception (`scp 'host:~/.ssh/id_*' .`), because the remote shell expands it. A quoted name is still compared as is: `find . -name '*.key' -exec cat {} \;` is blocked.
 
 What it does not stop, because it guards against mistakes, not an adversary: a reader missing from the list, a command that reads without naming the path (`cd ~/.aws && cat credentials`, `grep -r x .`), a script or heredoc that opens the file itself, a path built in a variable, and commands that print a secret without opening a file (`gh auth token`; planned). The sandbox of the `strict` profile covers the first ones.
 
