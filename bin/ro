@@ -70,6 +70,8 @@ check_path() { # $1 path; REMOTE=1 -> textual checks only (the other machine res
     */.git/config|*/.ssh|*/.ssh/*|*/.aws|*/.aws/*|*/.kube|*/.kube/*|*.tfstate|*.tfstate.*|*/.env|*/.env.*|*.pem|*.key|*kubeconfig*|*/.netrc|*/.npmrc)
       deny "sensitive path: $1" ;;
   esac
+  # The credential files of the core and the packs (the floor, hooks/credential-guard/credential-files)
+  if cred_match "$r" || cred_match "$p"; then deny "credential file ($CRED_HIT): $1"; fi
 }
 
 check_git() {
@@ -187,6 +189,9 @@ for pack in "$HARNESS"/packs/*/ro.sh; do
   . "$pack"
 done
 CHOSEN=" $(profile_packs "$HARNESS" | tr '\n' ' ') "
+# shellcheck source=hooks/lib/credentials.sh
+. "$HARNESS/hooks/lib/credentials.sh"   # already sourced by packs.sh only inside packs_permissions
+cred_load "$HARNESS"
 set -f
 pack_of() { local tp; for tp in $TOOL_PACK; do [ "${tp%%:*}" = "$1" ] && { printf '%s' "${tp#*:}"; return; }; done; }
 CHOSEN_TOOLS=""

@@ -38,6 +38,9 @@ for g in ro-guard block-destructive-platform; do
     || ko "hooks.json: PreToolUse/Bash lacks the $g guard"
   [ -x "$ROOT/hooks/$g/$g.sh" ] || ko "$g.sh missing or not executable"
 done
+jq -e '[.hooks.PreToolUse[]? | select(.matcher == "Bash|Read|Grep") | .hooks[].command] | index("\"${CLAUDE_PLUGIN_ROOT}/hooks/credential-guard/credential-guard.sh\"") != null' "$H" >/dev/null \
+  || ko "hooks.json: PreToolUse/Bash|Read|Grep lacks the credential-guard"
+[ -x "$ROOT/hooks/credential-guard/credential-guard.sh" ] || ko "credential-guard.sh missing or not executable"
 jq -e '.hooks.SessionStart | length > 0' "$H" >/dev/null || ko "hooks.json: SessionStart hook lost"
 feed() { jq -n --arg c "$2" '{tool_input:{command:$c}}' | env CLAUDE_PLUGIN_ROOT="$ROOT" IAH_HOOK_LOG="$TMP/hook.log" RO_MODE_FILE="$TMP/ro-mode" HOME="$TMP/hhome" "$ROOT/hooks/$1/$1.sh"; }
 mkdir -p "$TMP/hhome"; echo "test" > "$TMP/ro-mode"
@@ -47,6 +50,8 @@ out="$(feed block-destructive-platform "kubectl delete pod x" 2>&1 || true)"
 case "$out" in *'"block"'*) ;; *) ko "block-destructive-platform (plugin root) did not block a destructive command" ;; esac
 out="$(feed block-destructive-platform "kubectl get pods" 2>&1 || true)"
 [ -z "$out" ] || ko "block-destructive-platform (plugin root) blocked a harmless command"
+feed credential-guard "cat ~/.netrc" >/dev/null 2>&1; [ "$?" = 2 ] || ko "credential-guard (plugin root) did not block reading ~/.netrc"
+feed credential-guard "ssh -i ~/.ssh/id_ed25519 host uptime" >/dev/null 2>&1 || ko "credential-guard (plugin root) blocked using a key"
 [ -s "$TMP/hook.log" ] || ko "guards (plugin root) wrote no decision log"
 
 # 3. stable-link

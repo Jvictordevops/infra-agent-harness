@@ -14,6 +14,12 @@
           { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/ro-guard/ro-guard.sh\"" },
           { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/block-destructive-platform/block-destructive-platform.sh\"" }
         ]
+      },
+      {
+        "matcher": "Bash|Read|Grep",
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/credential-guard/credential-guard.sh\"" }
+        ]
       }
     ]
   }

@@ -102,7 +102,7 @@ else warn "link-harness would change $(printf '%s\n' "$lh_would" | wc -l | tr -d
 $(printf '%s\n' "$lh_would" | sed 's/^/        /')"; fi
 cs="$HOME/.claude/settings.json"
 ph="$HARNESS/hooks/hooks.json"
-for h in ro-guard.sh block-destructive-platform.sh; do
+for h in ro-guard.sh block-destructive-platform.sh credential-guard.sh; do
   in_settings="$(jq -r --arg h "$h" '[.hooks.PreToolUse[]?.hooks[]?.command | select(endswith("/" + $h))] | .[0] // empty' "$cs" 2>/dev/null)"
   if plugin_mode; then
     if jq -e --arg h "$h" '[.hooks.PreToolUse[]?.hooks[]?.command | select(contains("${CLAUDE_PLUGIN_ROOT}") and endswith($h + "\""))] | length > 0' "$ph" >/dev/null 2>&1; then
@@ -120,7 +120,7 @@ missing="$(jq -r --argjson b "$(packs_permissions "$HARNESS" 2>/dev/null || echo
 [ "$missing" = 0 ] && ok "deny/ask rules of the core and packs ($packs) present" || warn "$missing deny/ask rule(s) of the core and packs ($packs) missing (bin/link-harness)"
 [ -x "$HARNESS/bin/hooks/commit-msg" ] && ok "commit-msg hook present" || fail "bin/hooks/commit-msg missing or not executable"
 tlog="$(mktemp)"
-for t in tests/block-destructive.sh tests/commit-msg.sh tests/floor.sh tests/packs.sh tests/profile.sh tests/ro.sh "$HARNESS"/packs/*/tests.sh; do
+for t in tests/block-destructive.sh tests/commit-msg.sh tests/credential-guard.sh tests/floor.sh tests/packs.sh tests/profile.sh tests/ro.sh "$HARNESS"/packs/*/tests.sh; do
   t="${t#"$HARNESS"/}"
   [ -f "$HARNESS/$t" ] || continue
   IAH_HOOK_LOG="$tlog" bash "$HARNESS/$t" >/dev/null 2>&1 && ok "$t green" || fail "$t failing: run it to see which case"

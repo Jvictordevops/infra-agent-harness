@@ -16,7 +16,7 @@ doc() { (cd "$TMP" && HOME="$H" "$1/bin/doctor" 2>&1); }   # $1 = harness root
 
 # 1. Plugin registers both guards, settings.json has none: OK, no warning about them
 out="$(doc "$ROOT")"
-for g in ro-guard block-destructive-platform; do
+for g in ro-guard block-destructive-platform credential-guard; do
   grep -q "^OK    hook $g registered by the plugin\$" <<<"$out" || ko "no OK line for $g"
   ! grep -q "hook $g also in settings.json" <<<"$out" || ko "unexpected duplicate warning for $g"
   ! grep -q "^FAIL  hook $g" <<<"$out" || ko "unexpected FAIL for $g"
@@ -39,6 +39,7 @@ jq 'del(.hooks.PreToolUse)' "$ROOT/hooks/hooks.json" > "$C/hooks/hooks.json"
 out="$(doc "$C")"
 grep -q "^FAIL  hook ro-guard registered nowhere" <<<"$out" || ko "no FAIL for ro-guard missing from hooks.json"
 grep -q "^FAIL  hook block-destructive-platform registered nowhere" <<<"$out" || ko "no FAIL for block-destructive-platform missing from hooks.json"
+grep -q "^FAIL  hook credential-guard registered nowhere" <<<"$out" || ko "no FAIL for credential-guard missing from hooks.json"
 
 # 4. Manual mode unchanged: guards must be in settings.json
 out="$(cd "$TMP" && IAH_PLUGIN=0 HOME="$H" "$ROOT/bin/doctor" 2>&1)"

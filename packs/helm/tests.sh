@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2088  # '~/…' is passed to the helpers as the agent types it
 # Tests for the helm pack: bin/ro reads, destructive commands, deny/ask rules and ro-guard. Runs nothing real.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -39,5 +40,15 @@ unruled "helm list -A"
 guarded "helm list -A"
 guarded "helmfile diff"
 guarded "timeout 10 helm upgrade x y"
+
+# Credential files (credential-files): reading, copying or sending is blocked; using is not
+credblk "cat ~/.config/helm/registry/config.json"
+credblk "cat ~/.config/helm/repositories.yaml"
+credblk "cat ~/Library/Preferences/helm/registry/config.json"
+credread "~/.config/helm/registry/config.json"
+readdenied "~/.config/helm/registry/config.json"
+readdenied "~/Library/Preferences/helm/repositories.yaml"
+credok "helm repo list"
+credok "helm --registry-config ~/.config/helm/registry/config.json pull oci://r/c"
 
 pack_done "helm pack"

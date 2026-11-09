@@ -203,7 +203,7 @@ merge_settings() {
     if [ "$DRY_RUN" = 1 ]; then src="$(mktemp)"; echo '{}' > "$src"
     else mkdir -p "$(dirname "$dst")"; echo '{}' > "$dst"; fi
   elif [ "$plug" = 1 ]; then
-    drop="$(jq -c --arg root "$hroot" '[$root + "/hooks/ro-guard/ro-guard.sh", $root + "/hooks/block-destructive-platform/block-destructive-platform.sh"]' <<<'null')"
+    drop="$(jq -c --arg root "$hroot" '[$root + "/hooks/ro-guard/ro-guard.sh", $root + "/hooks/block-destructive-platform/block-destructive-platform.sh", $root + "/hooks/credential-guard/credential-guard.sh"]' <<<'null')"
     while IFS= read -r c; do
       [ -n "$c" ] || continue
       if jq -e --arg c "$c" 'index($c)' <<<"$drop" >/dev/null; then
@@ -212,7 +212,7 @@ merge_settings() {
       else
         say "kept hook $c in settings.json (not this harness; the guard will run twice: the plugin also registers it)"
       fi
-    done < <(jq -r '.hooks.PreToolUse[]?.hooks[]?.command // empty | select(endswith("/ro-guard.sh") or endswith("/block-destructive-platform.sh"))' "$dst" 2>/dev/null || true)
+    done < <(jq -r '.hooks.PreToolUse[]?.hooks[]?.command // empty | select(endswith("/ro-guard.sh") or endswith("/block-destructive-platform.sh") or endswith("/credential-guard.sh"))' "$dst" 2>/dev/null || true)
   fi
   new="$(jq --arg root "$hroot" --argjson plug "$plug" --argjson drop "$drop" --argjson perms "$perms" --slurpfile b "$base" '
     ($b[0] | del(._comment) | walk(if type == "string" then gsub("__ROOT__"; $root) else . end)) as $base

@@ -8,6 +8,9 @@
 #   denied / asked "<command>"     a permissions.deny / permissions.ask rule of the core or a pack matches it
 #   unruled "<command>"            no deny or ask rule matches it
 #   guarded "<command>"            ro-guard blocks it in read-only mode
+#   credblk / credok "<command>"   credential-guard blocks it / lets it through (reading vs using a credential)
+#   credread "<path>"              credential-guard blocks the Read tool on it ('~/…' is expanded)
+#   readdenied "<path>"            a Read(…) deny rule matches it ('~/<path>', or a path ending in a file name)
 #   pack_done <name>               prints the result; exits 1 if any case failed
 #
 # denied/asked/unruled approximate Claude Code's 'Bash(…)' rules with a shell glob ('*' = any text). Give
@@ -50,6 +53,36 @@ guarded() {
   jq -n --arg c "$1" '{tool_input:{command:$c}}' | "$ROOT/hooks/ro-guard/ro-guard.sh" >/dev/null 2>&1; rc=$?
   rm -f "$RO_MODE_FILE"
   [ "$rc" = 2 ] || _pt_ko "ro-guard should block in read-only mode: $1"
+}
+
+# Credential files (hooks/credential-guard, decision "Leer o copiar, no usar")
+_pt_crg() { # $1 tool, $2 command or path -> exit code of credential-guard
+  if [ "$1" = Bash ]; then jq -n --arg c "$2" '{tool_name:"Bash", tool_input:{command:$c}}'
+  else jq -n --arg t "$1" --arg p "$2" '{tool_name:$t, tool_input:{file_path:$p}}'; fi \
+    | "$ROOT/hooks/credential-guard/credential-guard.sh" >/dev/null 2>&1
+}
+credblk() { _pt_crg Bash "$1"; [ $? = 2 ] || _pt_ko "credential-guard should block: $1"; }
+credok() { _pt_crg Bash "$1" || _pt_ko "credential-guard should pass: $1"; }
+# shellcheck disable=SC2088  # '~/…' is matched as the agent types it, not expanded
+credread() { # $1 '~/<path>' or a path: the Read tool is blocked on it
+  local p="$1"
+  case "$p" in '~/'*) p="$HOME/${p#\~/}" ;; esac
+  _pt_crg Read "$p"; [ $? = 2 ] || _pt_ko "credential-guard should block Read of: $1"
+}
+# shellcheck disable=SC2088
+readdenied() { # $1 '~/<path>' or a path ending in a file name: a Read(…) deny rule matches it
+  local pat path="$1"
+  while IFS= read -r pat; do
+    case "$pat" in
+      '//**/'*)
+        # shellcheck disable=SC2053  # the rule is a glob on purpose
+        [[ "${path##*/}" == ${pat#//\*\*/} ]] && return 0 ;;
+      '~/'*)
+        # shellcheck disable=SC2053
+        case "$path" in '~/'*) [[ "${path#\~/}" == ${pat#\~/} ]] && return 0 ;; esac ;;
+    esac
+  done <<<"$(jq -r '.deny[] | select(startswith("Read(") and endswith(")")) | .[5:-1]' <<<"$_PT_PERMS")"
+  _pt_ko "no Read deny rule matches: $1"
 }
 
 pack_done() { if [ "$fail" = 0 ]; then echo "$1: all tests passed"; else echo "$1: tests FAILED"; exit 1; fi; }

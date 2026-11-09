@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2088  # '~/…' is passed to the helpers as the agent types it
 # Tests for the kubernetes pack: bin/ro reads, destructive commands, deny/ask rules and ro-guard. Runs nothing real.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -61,5 +62,15 @@ guarded "kubens x"
 guarded "ro aws eks list-clusters --profile P; kubectl delete ns x"
 guarded "bin/ro aws eks list-clusters --profile P; kubectl delete ns x"
 guarded "bash -c 'kubectl apply -f x'"
+
+# Credential files (credential-files, credential-readers): reading, copying or sending is blocked; using is not
+credblk "cat ~/.kube/config"
+credblk "cp ~/.kube/config /tmp/k"
+credblk "kubectl cp ~/.kube/config ns/pod:/tmp/config"
+credread "~/.kube/config"
+readdenied "~/.kube/config"
+credok "kubectl --kubeconfig ~/.kube/config get pods --context x"
+credok "KUBECONFIG=~/.kube/config kubectl get pods"
+credok "kubectl cp ns/pod:/var/log/app.log ./app.log"
 
 pack_done "kubernetes pack"

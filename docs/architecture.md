@@ -84,7 +84,7 @@ work/<context>/<YYYY-MM-DD.slug>/
 
 ## 3. A guarded command
 
-Two `PreToolUse` hooks on the Bash tool run before every shell command the agent issues. They are registered in `~/.claude/settings.json`.
+Three `PreToolUse` hooks on the Bash tool run before every shell command the agent issues; `credential-guard` also runs before the Read and Grep tools. They are registered in `~/.claude/settings.json`.
 
 ```mermaid
 sequenceDiagram
@@ -92,6 +92,7 @@ sequenceDiagram
   participant B as Bash tool
   participant R as ro-guard
   participant D as block-destructive
+  participant C as credential-guard
   participant L as decision log
   participant U as User
   A->>B: run a command
@@ -99,17 +100,21 @@ sequenceDiagram
   R-->>B: block when read-only mode is on
   B->>D: PreToolUse
   D-->>B: block when destructive
+  B->>C: PreToolUse
+  C-->>B: block when it reads a credential
   R->>L: append reason
   D->>L: append reason
+  C->>L: append reason
   B->>U: ask when a permissions.ask rule matches
   B-->>A: result or block reason
 ```
 
 - `ro-guard` does nothing unless the read-only mode file exists. With it on, it blocks cloud, cluster and remote tools used outside `bin/ro`, and any attempt to switch the mode off. It exits with code 2 and the reason goes to the agent.
 - The platform rules of both guards come from the packs (`packs/<name>/guard-tools` and `destructive.rules`, see [packs/README.md](../packs/README.md)); the guards keep only the core ones (remote shells, `gh`, `az`, `gcloud`).
+- `credential-guard` runs in every mode. It blocks a credential file (`~/.aws/credentials`, `~/.kube/config`, SSH private keys, `.env`…) given to a command that shows, copies or sends it, and the Read and Grep tools on it; using it (`ssh -i`, `--kubeconfig`, `source .env`) passes. Lists and limits: [packs/README.md](../packs/README.md#credential-files).
 - `block-destructive-platform` matches a list of rules (`terraform destroy`, `terraform state rm`, `kubectl delete|drain|cordon`, `kubectl rollout undo`, `helm uninstall`, `helmfile apply|destroy`, `aws ... delete-|terminate-|stop-`, `aws s3 rb|rm`...) anywhere in the command, also inside `ssh '...'` or `bash -c`. It answers with a block decision and a hint to let the user run it.
 - Each block appends one JSON line (time, hook, command cut to 300 characters, reason, directory) to `~/.local/state/infra-agent-harness/hook-decisions.jsonl` (mode 600). `IAH_HOOK_LOG` changes the path. Logging never makes a hook fail.
-- Separately from the hooks, `hooks/settings.base.json` and `packs/*/permissions.json` (merged by `link-harness`; a plugin cannot ship permission rules) add `permissions.deny` (destroy, delete, drain, uninstall, `aws s3 rb|rm`) and `permissions.ask` (force push, hard reset, `terraform|tofu|terragrunt apply`, `kubectl apply`, `helm install|upgrade`). `ask` means Claude Code stops and asks you.
+- Separately from the hooks, `hooks/settings.base.json` and `packs/*/permissions.json` (merged by `link-harness`; a plugin cannot ship permission rules) add `permissions.deny` (destroy, delete, drain, uninstall, `aws s3 rb|rm`, and one `Read(…)` rule per credential file) and `permissions.ask` (force push, hard reset, `terraform|tofu|terragrunt apply`, `kubectl apply`, `helm install|upgrade`). `ask` means Claude Code stops and asks you.
 - `hooks/confidence-nudge` (UserPromptSubmit) exists but is not in the base file; you register it yourself.
 
 ## 4. Read-only executor
@@ -221,6 +226,7 @@ For each setting the first of these wins:
 ## 9. What it does not protect against
 
 - **Mistakes, not adversaries.** The hooks catch common slips. A script written on the fly (a `.sh` the agent creates and runs) is not inspected, and neither are all possible ways to spell a command.
+- **Credential files: commands, not processes.** `credential-guard` reads the command line. A reader missing from its list, a script that opens the file itself or a path built in a variable gets through; the `Read(…)` rules only cover the commands Claude Code recognises. The sandbox of the `strict` profile is the barrier for those.
 - **Read-only is ours, not IAM.** `bin/ro` and `ro-guard` limit what the agent can run; the cloud role behind your profile is still whatever it is. Use read-only credentials too when you can.
 - **Only Claude Code has the agent hooks today.** For Copilot CLI, `link-harness` installs skills and instructions, but no guards.
 - **Hooks can be changed by their owner.** `~/.claude/settings.json` and the read-only mode file are yours; the harness stops agents from switching the mode off, but nothing stops you.

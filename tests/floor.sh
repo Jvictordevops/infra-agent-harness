@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# The floor: destructive platform commands that only a person runs, whatever packs are chosen (packs/README.md,
-# "Choosing packs"). Each one must be blocked by block-destructive-platform AND match a permissions.deny rule,
-# so two layers stop it. It fails if a change of packs drops any of them. Runs nothing real.
+# The floor, whatever packs are chosen (packs/README.md, "Choosing packs"): destructive platform commands that
+# only a person runs, each blocked by block-destructive-platform AND matching a permissions.deny rule; and
+# credential files no agent reads, each blocked by credential-guard AND matching a Read(…) deny rule. Two layers
+# stop each one. It fails if a change of packs drops any of them. Runs nothing real.
+# shellcheck disable=SC2088  # '~/…' is passed to the helpers as the agent types it
 # It runs once with the default profile and again with each profile file below: the weakest profile with no
 # pack chosen still has the whole floor (security-profile, packs/README.md).
 set -uo pipefail
@@ -37,6 +39,30 @@ FLOOR=(
 for c in "${FLOOR[@]}"; do
   blk "$c"
   denied "$c"
+done
+
+# Credential files: never read by an agent, whatever the profile and packs. Two locks: credential-guard (a
+# reader in Bash, and the Read tool) and a Read(…) deny rule. Core files first, then one per pack.
+FLOOR_CREDENTIALS=(
+  "~/.ssh/id_ed25519"
+  "~/.ssh/id_rsa"
+  "~/.netrc"
+  "~/.git-credentials"
+  "~/.docker/config.json"
+  "~/.config/gh/hosts.yml"
+  "~/.config/infra-agent-harness/evidence.key"
+  "~/.config/infra-agent-harness/bw-session"
+  "app/.env"
+  "certs/server.key"
+  "~/.aws/credentials"
+  "~/.kube/config"
+  "~/.terraform.d/credentials.tfrc.json"
+  "~/.config/helm/registry/config.json"
+)
+for f in "${FLOOR_CREDENTIALS[@]}"; do
+  credblk "cat $f"
+  credread "$f"
+  readdenied "$f"
 done
 
 pack_done floor

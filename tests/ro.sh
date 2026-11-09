@@ -21,6 +21,15 @@ fail=0
 ok() { if "$RO" --check "$@" >/dev/null 2>&1; then :; else echo "FAIL (should pass): $*"; fail=1; fi; }
 no() { if "$RO" --check "$@" >/dev/null 2>&1; then echo "FAIL (should deny): $*"; fail=1; fi; }
 
+# Credential files of the core and packs (hooks/credential-guard), also those the sensitive-path list does not name
+mkdir -p "$R/.docker"; touch "$R/.git-credentials" "$R/.docker/config.json" "$R/.env.local"
+no cat "$R/.git-credentials"
+no head "$R/.docker/config.json"
+no grep x "$R/.env.local"
+out="$("$RO" --check cat "$R/.git-credentials" 2>&1)"
+case "$out" in *"credential file (~/.git-credentials)"*) ;; *) echo "FAIL: ro does not name the credential pattern: $out"; fail=1 ;; esac
+ok cat "$R/values.yaml"
+
 ok git -C "$R" log -5 --oneline
 ok git -C "$R" branch -a
 ok git -C "$R" remote -v

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2088  # '~/…' is passed to the helpers as the agent types it
 # Tests for the terraform pack (terraform, tofu, terragrunt): destructive commands, deny/ask rules and ro-guard.
 # bin/ro does not run them. Runs nothing real.
 set -uo pipefail
@@ -48,5 +49,14 @@ asked "terragrunt run-all apply"
 guarded "terraform plan"
 guarded "tofu plan"
 guarded "terragrunt plan"
+
+# Credential files (credential-files): reading, copying or sending is blocked; using is not
+credblk "cat ~/.terraform.d/credentials.tfrc.json"
+credblk "jq . ~/.terraform.d/credentials.tfrc.json"
+credblk "cat ~/.terraformrc"
+credread "~/.terraform.d/credentials.tfrc.json"
+readdenied "~/.terraform.d/credentials.tfrc.json"
+readdenied "~/.terraformrc"
+credok "TF_CLI_CONFIG_FILE=~/.terraformrc terraform plan"
 
 pack_done "terraform pack"

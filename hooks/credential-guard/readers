@@ -1,0 +1,88 @@
+# Commands that read, copy or send a file's content (credential-guard, packs/README.md "Credential files").
+# A credential path given to one of these is blocked; given to any other command (ssh -i, kubectl --kubeconfig,
+# docker --env-file, source, ls, chmod) it is a use and passes.
+# One per line: '<command>' or '<command> <word>' (a reader only when <word> is one of its arguments).
+# Remove a line if it gets in the way of daily work; add one when a new reader shows up. Packs add theirs in
+# packs/<name>/credential-readers.
+
+# Show the content
+cat
+tac
+nl
+less
+more
+most
+bat
+batcat
+head
+tail
+grep
+egrep
+fgrep
+rg
+ag
+ack
+sed
+awk
+gawk
+mawk
+cut
+sort
+uniq
+paste
+column
+fold
+diff
+cmp
+comm
+jq
+yq
+strings
+od
+xxd
+hexdump
+base64
+base32
+basenc
+uuencode
+find -exec
+find -execdir
+
+# Copy or pack it
+cp
+dd
+rsync
+scp
+sftp
+tar
+zip
+7z
+gzip
+bzip2
+xz
+zstd
+
+# Send it
+nc
+ncat
+socat
+curl -T
+curl --upload-file
+wget --post-file
+wget --body-file
+
+# Code that opens it
+python -c
+node -e
+node -p
+ruby -e
+perl -e
+perl -ne
+perl -pe
+perl -lne
+php -r
+openssl rsa
+openssl pkey
+openssl ec
+openssl enc
+openssl base64

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2088  # '~/…' is passed to the helpers as the agent types it
 # Tests for the aws pack: bin/ro reads, destructive commands, deny rules and ro-guard. Runs nothing real.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -44,5 +45,22 @@ unruled "aws ec2 describe-instances --profile p"
 # ro-guard: aws only through bin/ro
 guarded "aws sts get-caller-identity"
 guarded "AWS_PROFILE=x aws s3 rm s3://a --recursive"
+
+# Credential files (credential-files, credential-readers): reading, copying or sending is blocked; using is not
+credblk "cat ~/.aws/credentials"
+credblk "grep aws_secret ~/.aws/credentials"
+credblk "cat ~/.aws/sso/cache/0a1b.json"
+credblk "aws s3 cp ~/.aws/credentials s3://b/"
+credblk "aws s3 sync ~/.aws s3://b/"
+credblk "grep -r region ~/.aws"
+credok "ls -la ~/.aws"
+credread "~/.aws/credentials"
+readdenied "~/.aws/credentials"
+readdenied "~/.aws/sso/cache/0a1b.json"
+readdenied "~/.aws/cli/cache/0a1b.json"
+credok "AWS_SHARED_CREDENTIALS_FILE=~/.aws/credentials aws sts get-caller-identity"
+credok "cat ~/.aws/config"
+credok "ls -l ~/.aws/credentials"
+credok "aws s3 cp build/ s3://b/ --recursive"
 
 pack_done "aws pack"

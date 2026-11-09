@@ -15,7 +15,10 @@ backups() { find "$TMP/.claude" -name 'settings.json.bak-*' | wc -l | tr -d ' ';
 run
 check '.permissions.deny | index("Bash(kubectl * delete *)")' "deny rules installed"
 check '.permissions.ask | index("Bash(git push --force*)")' "ask rules installed"
-check '[.hooks.PreToolUse[].hooks[].command] | length == 2' "two hooks registered"
+check '[.hooks.PreToolUse[].hooks[].command] | length == 3' "three hooks registered"
+check '[.hooks.PreToolUse[] | select(.matcher == "Bash|Read|Grep") | .hooks[].command | select(endswith("/credential-guard.sh"))] | length == 1' "credential-guard registered for Bash, Read and Grep"
+check '.permissions.deny | index("Read(~/.ssh/id_ed25519)") and index("Read(//**/.env)")' "Read deny rules of the core credential files installed"
+check '.permissions.deny | index("Read(~/.aws/credentials)") and index("Read(~/.kube/config)")' "Read deny rules of the pack credential files installed"
 check "[.hooks.PreToolUse[].hooks[].command] | all(startswith(\"$ROOT/hooks/\"))" "hook paths point to the repo"
 
 # 2. Existing settings: keep everything, no duplicates
@@ -73,11 +76,13 @@ check '(.hooks // {}) | has("PreToolUse") | not' "plugin mode: hooks added to a 
 
 # 7. Plugin mode: stable-link guard entries removed (with backup), foreign ones kept with a message
 ROG="$SL/hooks/ro-guard/ro-guard.sh"; BDP="$SL/hooks/block-destructive-platform/block-destructive-platform.sh"
+CRG="$SL/hooks/credential-guard/credential-guard.sh"
 FOREIGN="/home/x/other-harness/hooks/ro-guard/ro-guard.sh"
 cat > "$S" <<EOF
 { "permissions": { "deny": ["Bash(kubectl delete *)"] },
   "hooks": { "PreToolUse": [
     { "matcher": "Bash", "hooks": [ { "type": "command", "command": "$ROG" }, { "type": "command", "command": "$BDP" } ] },
+    { "matcher": "Bash|Read|Grep", "hooks": [ { "type": "command", "command": "$CRG" } ] },
     { "matcher": "Bash", "hooks": [ { "type": "command", "command": "$FOREIGN" }, { "type": "command", "command": "/home/x/other-tool/hooks/block-git-write.sh" } ] } ],
     "SessionStart": [ { "hooks": [ { "type": "command", "command": "/home/x/start.sh" } ] } ] },
   "model": "opus" }
@@ -89,11 +94,12 @@ cmp -s "$S" "$TMP/settings.before" || { echo "FAIL: plugin mode --dry-run change
 [ "$(backups)" = "$b0" ] || { echo "FAIL: plugin mode --dry-run made a backup"; fail=1; }
 grep -qF "would: remove hook $ROG from settings.json (the plugin registers it)" <<<"$out" || { echo "FAIL: dry-run does not list the ro-guard removal"; fail=1; }
 grep -qF "would: remove hook $BDP from settings.json (the plugin registers it)" <<<"$out" || { echo "FAIL: dry-run does not list the block-destructive removal"; fail=1; }
+grep -qF "would: remove hook $CRG from settings.json (the plugin registers it)" <<<"$out" || { echo "FAIL: dry-run does not list the credential-guard removal"; fail=1; }
 sleep 1
 out="$(prun)"
 grep -qF "kept hook $FOREIGN in settings.json (not this harness; the guard will run twice: the plugin also registers it)" <<<"$out" || { echo "FAIL: no message for the foreign guard entry"; fail=1; }
 [ "$(backups)" = "$((b0 + 1))" ] || { echo "FAIL: removal made no backup"; fail=1; }
-check "[.hooks.PreToolUse[].hooks[].command] | index(\"$ROG\") == null and index(\"$BDP\") == null" "stable-link guard entries not removed"
+check "[.hooks.PreToolUse[].hooks[].command] | index(\"$ROG\") == null and index(\"$BDP\") == null and index(\"$CRG\") == null" "stable-link guard entries not removed"
 check "[.hooks.PreToolUse[].hooks[].command] | index(\"$FOREIGN\") != null" "foreign guard entry removed"
 check '[.hooks.PreToolUse[].hooks[].command] | index("/home/x/other-tool/hooks/block-git-write.sh") != null' "other hook removed"
 check '(.hooks.PreToolUse | length) == 1' "emptied PreToolUse group kept"
@@ -111,6 +117,6 @@ check '(.hooks // {}) | has("PreToolUse") | not' "empty PreToolUse key left behi
 # 8. Manual mode still adds the hooks
 rm -f "$S"
 (cd "$TMP/work" && IAH_PLUGIN=0 HOME="$TMP" LINK_HARNESS_WINDOWS=0 "$ROOT/bin/link-harness" --quiet >/dev/null 2>&1)
-check '[.hooks.PreToolUse[].hooks[].command] | length == 2' "manual mode: hooks not registered"
+check '[.hooks.PreToolUse[].hooks[].command] | length == 3' "manual mode: hooks not registered"
 
 if [ "$fail" = 0 ]; then echo "link-harness settings: all tests passed"; else echo "link-harness settings: tests FAILED"; exit 1; fi

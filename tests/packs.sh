@@ -21,7 +21,7 @@ for d in "$ROOT"/packs/*/; do
   d="${d%/}"; p="${d##*/}"; n=$((n + 1))
   [[ "$p" =~ ^[a-z0-9-]+$ ]] || ko "$p: pack name must be [a-z0-9-]"
   for f in "$d"/*; do
-    case "${f##*/}" in ro.sh|guard-tools|destructive.rules|permissions.json|tests.sh|domains|README.md) ;;
+    case "${f##*/}" in ro.sh|guard-tools|destructive.rules|permissions.json|tests.sh|domains|credential-files|credential-readers|README.md) ;;
       *) ko "$p: unknown file ${f##*/} (packs/README.md)" ;; esac
   done
   if [ -f "$d/permissions.json" ]; then
@@ -34,6 +34,18 @@ for d in "$ROOT"/packs/*/; do
       case "$t" in ''|'#'*) continue ;; esac
       [[ "$t" =~ ^[a-z0-9_-]+$ ]] || ko "$p: guard-tools: bad name '$t'"
     done < "$d/guard-tools"
+  fi
+  if [ -f "$d/credential-files" ]; then
+    while IFS= read -r r || [ -n "$r" ]; do
+      case "$r" in ''|'#'*) continue ;; esac
+      [[ "$r" =~ ^(~/|\*\*/)[^[:space:]]+$ ]] || ko "$p: credential-files: not '~/<path>' or '**/<name>': $r"
+    done < "$d/credential-files"
+  fi
+  if [ -f "$d/credential-readers" ]; then
+    while IFS= read -r r || [ -n "$r" ]; do
+      case "$r" in ''|'#'*) continue ;; esac
+      [[ "$r" =~ ^[a-z0-9_.-]+( [^[:space:]]+)?$ ]] || ko "$p: credential-readers: not '<command>' or '<command> <word>': $r"
+    done < "$d/credential-readers"
   fi
   if [ -f "$d/destructive.rules" ]; then
     while IFS= read -r r || [ -n "$r" ]; do
@@ -58,6 +70,8 @@ EOF
 printf '# demo\ndemo\n' > "$H/packs/demo/guard-tools"
 printf '# demo\ndemo-nuke|<P>demo<G><S>nuke<E>\n' > "$H/packs/demo/destructive.rules"
 printf '{"deny": ["Bash(demo nuke *)"], "ask": ["Bash(demo apply *)"]}\n' > "$H/packs/demo/permissions.json"
+printf '# demo\n~/.demo/token\n**/demo.secret\n' > "$H/packs/demo/credential-files"
+printf '# demo\ndemo push\n' > "$H/packs/demo/credential-readers"
 
 "$H/bin/ro" --check demo list >/dev/null 2>&1 || ko "ro: the demo pack's tool is not allowed"
 "$H/bin/ro" --check demo nuke >/dev/null 2>&1 && ko "ro: the demo pack's check does not run"
@@ -75,12 +89,21 @@ touch "$TMP/ro-mode"
 RO_MODE_FILE="$TMP/ro-mode" decide "$H/hooks/ro-guard/ro-guard.sh" "demo list" 2>/dev/null; [ $? = 2 ] || ko "ro-guard: 'demo' not blocked outside bin/ro"
 RO_MODE_FILE="$TMP/ro-mode" decide "$H/hooks/ro-guard/ro-guard.sh" "az vm list" 2>/dev/null; [ $? = 2 ] || ko "ro-guard: core tool 'az' not blocked"
 RO_MODE_FILE="$TMP/ro-mode" decide "$H/hooks/ro-guard/ro-guard.sh" "ls -la" 2>/dev/null || ko "ro-guard: 'ls' blocked"
+CRG="$H/hooks/credential-guard/credential-guard.sh"
+decide "$CRG" "cat ~/.demo/token" 2>/dev/null; [ $? = 2 ] || ko "credential-guard: the demo credential file is not blocked"
+decide "$CRG" "grep x app/demo.secret" 2>/dev/null; [ $? = 2 ] || ko "credential-guard: the demo '**/' pattern is not blocked"
+decide "$CRG" "demo push ~/.demo/token" 2>/dev/null; [ $? = 2 ] || ko "credential-guard: the demo reader does not block"
+decide "$CRG" "demo use ~/.demo/token" 2>/dev/null || ko "credential-guard: a use of the demo credential is blocked"
+decide "$ROOT/hooks/credential-guard/credential-guard.sh" "cat ~/.demo/token" 2>/dev/null || ko "credential-guard: demo credential blocked without its pack"
 
 # shellcheck source=bin/lib/packs.sh
 . "$ROOT/bin/lib/packs.sh"
 perms="$(packs_permissions "$H")"
 jq -e '(.deny | index("Bash(demo nuke *)")) and (.ask | index("Bash(demo apply *)")) and (.ask[0] | startswith("Bash(git "))' <<<"$perms" >/dev/null \
   || ko "packs_permissions: demo rules missing or core not first: $perms"
+jq -e '(.deny | index("Read(~/.demo/token)")) and (.deny | index("Read(//**/demo.secret)")) and (.deny | index("Read(~/.ssh/id_ed25519)"))' <<<"$perms" >/dev/null \
+  || ko "packs_permissions: Read rules of the demo or core credential files missing"
+jq -e '[.deny[] | select(startswith("Read("))] | length == (unique | length)' <<<"$perms" >/dev/null || ko "packs_permissions: duplicate Read rules"
 [ "$(packs_names "$H" | paste -sd, -)" = "aws,demo,helm,kubernetes,terraform" ] || ko "packs_names: $(packs_names "$H" | paste -sd, -)"
 
 # 3. A pack cannot take over a core tool, and a tool needs its check
@@ -104,6 +127,10 @@ helper_fails 'denied "ls -la"'
 helper_fails 'asked "ls -la"'
 helper_fails 'unruled "kubectl delete pod x"'
 helper_fails 'guarded "ls -la"'
+helper_fails 'credblk "ls -la"'
+helper_fails 'credok "cat ~/.netrc"'
+helper_fails 'credread "README.md"'
+helper_fails 'readdenied "README.md"'
 
 [ "$fail" = 0 ] && echo "packs: all tests passed"
 exit "$fail"
