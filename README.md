@@ -44,7 +44,7 @@ Full detail and more diagrams: [docs/architecture.md](docs/architecture.md).
 - **Rule packs** (`packs/`): the platform rules of the guards and `bin/ro`, one folder per technology (`aws`, `kubernetes`, `helm`, `terraform`), as data plus a small `bin/ro` check. Format and how to add one: [packs/README.md](packs/README.md).
   - Every block is appended to `~/.local/state/infra-agent-harness/hook-decisions.jsonl`.
 - **Read-only executor** (`bin/ro`): one allow-listed command at a time, here or over SSH (`--host`).
-- **Git hooks** (`bin/hooks/`): `commit-msg` (no AI attribution), `prepare-commit-msg` (adds the task trailer), `pre-commit` (gitleaks, then `bin/check-work --staged`), `post-merge` and `post-rewrite` (re-run `link-harness`).
+- **Git hooks** (`bin/hooks/`): `commit-msg` (optional: blocks AI attribution when the repo sets `ai_attribution=block`), `prepare-commit-msg` (adds the task trailer), `pre-commit` (gitleaks, then `bin/check-work --staged`), `post-merge` and `post-rewrite` (re-run `link-harness`).
 - **Method** (`docs/method.md`, `docs/method-full.md`): `bin/new-work`, `bin/check-work`, `templates/`, English and Spanish vocabulary in `locale/`.
 - **Skills** (`skills/`): `new-project`, `load-project`, `close-task`, `init-context`, `troubleshoot`, `digest`, `parallel-audit`, `parallel-review`, `role`.
 - **Modules** (`modules/`): `evidence` (shared evidence store, encrypted archives), `two-machine` (architect and executor on two machines).
@@ -108,8 +108,9 @@ git config core.hooksPath ~/infra-agent-harness/bin/hooks
 | `language` | `.harness.conf` | `en`, `es` (a `locale/<lang>.sh` file) | `en` |
 | `method` | `.harness.conf` | `light`, `full` | `light` |
 | `modules` | `.harness.conf` | comma list: `evidence`, `two-machine` | none |
+| `ai_attribution` | `.harness.conf` | `allow`, `block`: with `block` the `commit-msg` hook refuses commits with AI attribution (tool `Co-authored-by` trailers, "Generated with", model names, an agent as author) | `allow` |
 | `denylist` | `.harness.conf` | path, relative to the work repo, of your private denylist; `link-harness` links `~/.config/infra-agent-harness/denylist.txt` to it (read by `denylist-scan`) | none |
-| `IAH_LANG`, `IAH_METHOD`, `IAH_MODULES`, `IAH_DENYLIST` | environment | same as above; they win over `.harness.conf` (`IAH_DENYLIST` is the path itself) | unset |
+| `IAH_LANG`, `IAH_METHOD`, `IAH_MODULES`, `IAH_AI_ATTRIBUTION`, `IAH_DENYLIST` | environment | same as above; they win over `.harness.conf` (`IAH_DENYLIST` is the path itself) | unset |
 | `IAH_REPO` | environment | path of the work repo | the git repo of the current directory |
 | `evidence.conf` | `~/.config/infra-agent-harness/` | per-machine keys of the evidence module | see its README |
 

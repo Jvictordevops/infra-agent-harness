@@ -25,7 +25,7 @@ Detail on demand: `contexts/<name>/AGENTS.md` (or `/init-context <name>`).
 
 - Results from another agent or session: 1) summarise what they say, 2) propose what you would do and why, 3) wait for confirmation before editing or committing. Design decisions are always asked.
 - Prompts for another agent are pasted in the chat as a code block, never saved to files.
-- Commits: no AI attribution (tool `Co-authored-by` trailers, model or agent names); author and email are the user's. `hooks/commit-msg` enforces it.
+- Commits: author and email are the user's. TODO keep or delete: no AI attribution (tool `Co-authored-by` trailers, model or agent names); the `commit-msg` hook enforces it when `.harness.conf` has `ai_attribution=block`.
 
 ## Confidence gate
 

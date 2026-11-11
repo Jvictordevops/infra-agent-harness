@@ -1,11 +1,24 @@
 #!/usr/bin/env bash
-# Block AI attribution in commits (GLOBAL.md, "Commits"): tool Co-authored-by trailers, "Generated with",
-# session trailers, model names, and an agent as author or committer. Naming a product or a path
-# (Claude Code, ~/.copilot, .claude-plugin) is allowed: the rule is about attribution.
-# Enable with: git config core.hooksPath bin/hooks · tests: tests/commit-msg.sh
+# Optional: block AI attribution in commits. Off unless the repository asks for it:
+#   ai_attribution=block   in <repo>/.harness.conf (IAH_AI_ATTRIBUTION=block|allow overrides)
+# When on, it blocks tool Co-authored-by trailers, "Generated with", session trailers, model names, and an
+# agent as author or committer. Naming a product or a path (Claude Code, ~/.copilot, .claude-plugin) is
+# allowed: the rule is about attribution. Your GLOBAL.md should state the same rule (templates/GLOBAL.md).
+# Enable the git hooks with: git config core.hooksPath <harness>/bin/hooks · tests: tests/commit-msg.sh
 set -uo pipefail
 
 MSG_FILE="${1:?usage: commit-msg <message-file>}"
+HERE="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")" && pwd)"
+# shellcheck source-path=SCRIPTDIR source=../lib/conf.sh
+. "$HERE/../lib/conf.sh"
+
+mode="${IAH_AI_ATTRIBUTION:-$(conf_get "$(git rev-parse --show-toplevel 2>/dev/null || true)" ai_attribution)}"
+case "${mode:-allow}" in
+  block) ;;
+  allow) exit 0 ;;
+  *) echo "commit-msg: ai_attribution='$mode' is not valid (block, allow); not checking" >&2; exit 0 ;;
+esac
+
 AI='claude|anthropic|copilot|openai|chatgpt|gpt-?[0-9]|gemini|codex|cursor|sonnet|opus|haiku|\[bot\]'
 errors=()
 
@@ -25,12 +38,12 @@ if printf '%s\n' "$body" | grep -qiE '(^|[^[:alnum:]_-])(sonnet|opus|haiku|chatg
 fi
 for who in "$(git var GIT_AUTHOR_IDENT 2>/dev/null)" "$(git var GIT_COMMITTER_IDENT 2>/dev/null)"; do
   if printf '%s' "${who% * *}" | grep -qiE "$AI"; then
-    errors+=("agent identity: ${who% * *} (set user.name/user.email to the user's, ai-workflow-standard 6.28)")
+    errors+=("agent identity: ${who% * *} (set user.name and user.email to your own)")
   fi
 done
 
 if [ "${#errors[@]}" -gt 0 ]; then
-  echo "commit-msg: commit blocked — no AI attribution in commits (GLOBAL.md):" >&2
+  echo "commit-msg: commit blocked: no AI attribution in commits (ai_attribution=block in .harness.conf):" >&2
   printf '  - %s\n' "${errors[@]}" >&2
   exit 1
 fi

@@ -64,7 +64,7 @@ flowchart LR
 - Before starting a task you mark it `[~]` in the current `ROADMAP/<date>.md` and in README `## In progress`. Each finding or decision is a new file in `RECORD/`. When done, the task is struck, never deleted.
 - `close-task` rewrites Status, In progress and Next steps, then runs `bin/check-work`.
 - On commit, `prepare-commit-msg` adds the task trailer (`Task:`, or the word of your language) for tasks the staged files start, close or document. It never blocks.
-- `commit-msg` blocks AI attribution: tool `Co-authored-by` trailers, "Generated with" lines, session trailers, model names, an agent as author.
+- `commit-msg` is optional (`ai_attribution=block` in `.harness.conf`): it then blocks AI attribution: tool `Co-authored-by` trailers, "Generated with" lines, session trailers, model names, an agent as author.
 - `pre-commit` (the one in `bin/hooks/`) runs `gitleaks` on the staged changes (the commit is blocked if `gitleaks` is not installed), then `bin/check-work --staged`. It does **not** run `denylist-scan`; that is the contributor hook of this repo (`.githooks/pre-commit`).
 - **CI of this repo** (`.github/workflows/ci.yml`, read-only token, actions pinned by SHA): `tests/lint`, `tests/run`, `gitleaks` on the whole history, and `denylist-scan --quiet` plus `--history` with the maintainer's denylist from the `IAH_DENYLIST` secret. Logs show file, line and rule, never the matching text. Pull requests from forks and Dependabot get no secrets, so they are checked with the generic patterns only.
 
