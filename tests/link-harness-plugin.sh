@@ -41,6 +41,8 @@ grep -q "^would: link $H/.copilot/skills/close-task -> $IAH_STABLE_LINK/skills/c
 grep -q "^would: merge permissions of hooks/settings.base.json" <<<"$out" || ko "dry-run: no settings merge listed"
 grep -q "^would: set core.hooksPath" <<<"$out" || ko "dry-run: no hooksPath listed"
 grep -q "^would: link $H/.claude/CLAUDE.md" <<<"$out" || ko "dry-run: no GLOBAL.md link listed"
+grep -q "^would: link $H/.local/bin/ro -> $IAH_STABLE_LINK/bin/ro" <<<"$out" || ko "dry-run: no ro link through the stable link"
+grep -q "^would: link $H/.local/bin/security-profile -> $IAH_STABLE_LINK/bin/security-profile" <<<"$out" || ko "dry-run: no security-profile link"
 ! grep -qv '^would: ' <<<"$out" || ko "dry-run --quiet printed something that is not a would: line"
 # a real run afterwards makes the dry-run empty (idempotent)
 lh "$H" --quiet >/dev/null

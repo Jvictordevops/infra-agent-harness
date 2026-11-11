@@ -59,7 +59,7 @@ guarded() {
   [ "$rc" = 2 ] || _pt_ko "ro-guard should block in read-only mode: $1"
 }
 
-# Credential files (hooks/credential-guard, decision "Leer o copiar, no usar")
+# Credential files (hooks/credential-guard: read or copy, no; use, yes)
 _pt_crg() { # $1 tool, $2 command or path -> exit code of credential-guard
   if [ "$1" = Bash ]; then jq -n --arg c "$2" '{tool_name:"Bash", tool_input:{command:$c}}'
   else jq -n --arg t "$1" --arg p "$2" '{tool_name:$t, tool_input:{file_path:$p}}'; fi \

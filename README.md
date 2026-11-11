@@ -2,7 +2,7 @@
 
 A safe-by-default harness for AI coding agents that work on real infrastructure, with traceable work.
 
-> Status: v0.1, in progress, not released. See [Status and roadmap](#status-and-roadmap).
+> Status: first public version (0.1). It guards against mistakes, not against an adversary: read the [threat model](docs/threat-model.md) before you rely on it.
 
 ## Why
 
@@ -52,9 +52,9 @@ Full detail and more diagrams: [docs/architecture.md](docs/architecture.md).
 
 ## Quick start
 
-### As a Claude Code plugin (new, main path)
+### As a Claude Code plugin (main path)
 
-This repo is also its own plugin marketplace. The plugin packaging is new and lightly tested; the manual install below still works and is the fallback.
+This repo is also its own plugin marketplace. The manual install below is the fallback. Step by step, with what you should see at each step: [docs/guide.md](docs/guide.md).
 
 ```bash
 claude plugin marketplace add Jvictordevops/infra-agent-harness
@@ -116,27 +116,37 @@ git config core.hooksPath ~/infra-agent-harness/bin/hooks
 
 ## Documentation
 
+- [docs/guide.md](docs/guide.md): install, first work, read-only mode, profiles and packs, step by step.
+- [docs/threat-model.md](docs/threat-model.md): what each layer stops and what it does not.
 - [docs/architecture.md](docs/architecture.md): how the pieces fit, with diagrams and limits.
 - [docs/method.md](docs/method.md): the light work method (default).
 - [docs/method-full.md](docs/method-full.md): the full method (strict numbering).
-- [docs/tools.md](docs/tools.md): tool notes, read-only executors, hook registration, decision log.
+- [docs/tools.md](docs/tools.md): reference: tool notes, read-only executors, hook registration, decision log.
+- [packs/README.md](packs/README.md): rule packs, credential files, commands that show secrets.
 - [modules/evidence/README.md](modules/evidence/README.md): evidence store, archives, secrets backends.
 - [modules/two-machine/README.md](modules/two-machine/README.md): architect and executor protocol, SSH.
 
 ## Status and roadmap
 
-Version 0.1 is in progress and has not been released. What is described above exists in this repo, with tests under `tests/` and `modules/*/tests/`: `tests/run` runs them all and `tests/lint` runs shellcheck. CI (`.github/workflows/ci.yml`) runs both, plus gitleaks and the denylist scan of the tree and the whole history, on every push to `main`, every pull request and every release tag. Some parts are only lightly tested; the module READMEs say which.
+What is described above exists in this repo, with tests under `tests/`, `packs/*/` and `modules/*/tests/`: `tests/run` runs them all and `tests/lint` runs shellcheck. CI (`.github/workflows/ci.yml`) runs both, plus gitleaks and the denylist scan of the tree and the whole history, on every push to `main`, every pull request and every release tag (macOS on release tags). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+
+Used daily on WSL2 and macOS with Claude Code. Less tested: the two optional modules (their READMEs say which parts) and the `strict` profile on macOS.
 
 Planned, not implemented (do not rely on any of these):
 
-- Security profiles: `isolated` (the container). Today `bin/security-profile` records the profile and chooses the packs whose tools `bin/ro` runs; `permissive` drops the platform `ask` rules and `strict` turns on the sandbox of Claude Code (`docs/tools.md`).
-- Environments: corporate and personal.
-- Packs for other clouds (GCP, Azure, on-prem) and a guide to write one.
-- IT managed policy.
-- `doctor --security`.
+- One command parser for the three guards, so a command that only mentions a blocked one is not blocked.
+- A warning at session start when `link-harness` has not been run.
+- Read-only mode per work repo instead of per machine.
+- `doctor --security`, environments (corporate and personal) and an IT managed policy.
+- Packs for other clouds (GCP, Azure, on-prem).
 - Copilot hooks (today the hooks are registered for Claude Code only).
-- Container isolation.
+- Container isolation (the `isolated` profile).
+
+## Contributing and security
+
+- [CONTRIBUTING.md](CONTRIBUTING.md): set up, tests, rules for a change.
+- [SECURITY.md](SECURITY.md): how to report a vulnerability, and what the guards do not stop.
 
 ## License
 
-Apache-2.0 is intended. There is no `LICENSE` file in the repo yet; it is coming.
+[Apache-2.0](LICENSE).

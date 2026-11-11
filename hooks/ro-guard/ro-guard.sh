@@ -39,7 +39,7 @@ done
 
 block() {
   log_decision ro-guard "$CMD" "$1"
-  echo "ro-guard: read-only mode is on ($(cat "$MODE")). $1 Use bin/ro <tool> … (docs/tools.md); only the user switches it off ('bin/ro mode off' in a terminal)." >&2
+  echo "ro-guard: read-only mode is on ($(cat "$MODE")). $1 Use 'ro <tool> …' (bin/ro in a clone of the harness; docs/tools.md). Only the user switches the mode off ('ro mode off' in a terminal)." >&2
   exit 2
 }
 

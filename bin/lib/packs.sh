@@ -39,7 +39,7 @@ packs_permissions() {
 
 # The rules a security profile puts in settings.json: {"deny": […], "ask": […], "drop": […]}. 'drop' is the ask
 # rules link-harness removes from settings.json. permissive: no pack asks (apply, install, upgrade); the core
-# asks (git force push, hard reset) and every deny rule stay (decision "Permissive sin preguntas de plataforma").
+# asks (git force push, hard reset) and every deny rule stay: permissive means no platform questions, nothing else.
 # Other profiles: everything, drop empty.
 packs_profile_permissions() { # $1 harness, $2 profile name (profile_name)
   local all
@@ -63,8 +63,8 @@ _packs_lines() { # files -> their lines without comments, blank lines and traili
   done
 }
 
-# The sandbox of the strict profile (decisions "ro fuera del sandbox", "Tercera cerradura" and, after the real
-# test, "Denegar sin preguntar"), as
+# The sandbox of the strict profile (ro runs outside it, the credential files are denied inside it as a third
+# lock, and a domain not listed is refused without asking), as
 # {"strict": bool, "excluded": […], "domains": […], "all_domains": […], "creds": [{path, mode}…]}:
 #   excluded     commands that run outside the sandbox: core .sandbox.excludedCommands (ro, the read-only gate,
 #                reads the cloud credentials itself)

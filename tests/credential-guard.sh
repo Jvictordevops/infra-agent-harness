@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for hooks/credential-guard (decision "Leer o copiar, no usar", packs/README.md "Credential files"):
+# Tests for hooks/credential-guard (read or copy, no; use, yes: packs/README.md "Credential files"):
 # reading, copying or sending a credential is blocked; using it, listing it or changing its mode passes.
 # Feeds the hook with tool calls; runs nothing real.
 # shellcheck disable=SC2016  # commands are written as the agent types them, with literal $HOME and $(…)

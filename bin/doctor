@@ -70,7 +70,7 @@ if [ -n "$REPO" ] && [ "$REPO" != "$HARNESS" ]; then
   if [ "$hp" = "$HARNESS/bin/hooks" ]; then ok "repo $REPO: hooksPath -> harness bin/hooks"
   elif [ "$hp" = "$sl/bin/hooks" ]; then ok "repo $REPO: hooksPath -> stable link bin/hooks ($sl)"
   elif [ -z "$hp" ]; then warn "repo $REPO: core.hooksPath is not set (git hooks inactive): cd $REPO && $HARNESS/bin/link-harness$(plugin_mode || echo "   (manual install: git -C $REPO config core.hooksPath $HARNESS/bin/hooks)")"
-  else warn "repo $REPO: hooksPath is '$hp', not $HARNESS/bin/hooks (left as is)"; fi
+  else warn "repo $REPO: hooksPath is '$hp', not $(plugin_mode && printf '%s' "$sl" || printf '%s' "$HARNESS")/bin/hooks (left as is)"; fi
   vocab_load "$REPO" 2>/dev/null; ok "repo $REPO: record language '$VOC_LANG' (.harness.conf)"
   ok "repo $REPO: check-work method '$(conf_method "$REPO" 2>/dev/null)' (.harness.conf / IAH_METHOD)"
   # work repo behind its upstream (local refs only: no fetch of the work repo)
@@ -94,7 +94,7 @@ if [ -n "$REPO" ] && [ "$REPO" != "$HARNESS" ]; then
   n="$(find "$REPO/contexts" -mindepth 1 -maxdepth 1 -type d ! -name '_*' 2>/dev/null | wc -l | tr -d ' ')"
   [ "$n" -gt 0 ] && ok "repo $REPO: $n context(s) in contexts/" || warn "repo $REPO: no contexts/<name>/ yet (works can only go under work/global/)"
 else
-  warn "no repository with works detected (run from it, or set IAH_REPO)"
+  warn "no repository with works detected: cd to your work repo and run doctor again, or set IAH_REPO=<its path>"
 fi
 
 # 3. Tools
@@ -153,6 +153,9 @@ if [ "$pprof" = strict ]; then
     done
   fi
 elif [ "$sbstate" = left ]; then warn "the sandbox of strict is still on in settings.json; security profile $pprof turns it off (bin/link-harness)"; fi
+if [ -L "$HOME/.local/bin/ro" ] && command -v ro >/dev/null 2>&1; then ok "ro and security-profile on the PATH (~/.local/bin)"
+elif [ -L "$HOME/.local/bin/ro" ]; then warn "~/.local/bin is not on the PATH: 'ro mode on|off' typed in a terminal will not run (add it to your shell profile)"
+else warn "ro is not linked in ~/.local/bin: 'ro mode on|off' typed in a terminal will not run (bin/link-harness)"; fi
 [ -x "$HARNESS/bin/hooks/commit-msg" ] && ok "commit-msg hook present" || fail "bin/hooks/commit-msg missing or not executable"
 command -v jq >/dev/null && ok "guards can read commands (jq)" || fail "jq missing: the guards block every command until it is installed (they fail closed)"
 if [ "$RUN_TESTS" = 1 ]; then

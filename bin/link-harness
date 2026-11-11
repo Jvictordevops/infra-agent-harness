@@ -10,6 +10,7 @@
 #     is set to <stable link>/bin/hooks (IAH_STABLE_LINK, default ~/.local/share/infra-agent-harness/current,
 #     kept by the plugin's SessionStart hook) when it is empty or points into a harness/plugin cache path;
 #     any other custom hooksPath is left alone with a warning.
+#   - bin/ro and bin/security-profile -> ~/.local/bin (the two commands only the user runs, from a terminal)
 #   - GLOBAL.md of the work repo (if present) -> ~/.claude/CLAUDE.md and ~/.copilot/copilot-instructions.md
 #     (work repo: $IAH_REPO, else the git repository of the current directory)
 #   - denylist= of the work repo's .harness.conf (path relative to the repo; IAH_DENYLIST overrides) ->
@@ -183,6 +184,12 @@ else
     fi
   fi
 fi
+
+# The two commands only the user runs, from a terminal (ro-guard blocks agents): 'ro mode on|off' and
+# 'security-profile set'. Linked into ~/.local/bin, through the stable link in plugin mode. Without them on
+# the PATH, 'ro mode on' typed in a terminal fails and the user believes read-only mode is on.
+if plugin_mode; then UBIN="$(stable_link)/bin"; else UBIN="$ROOT/bin"; fi
+for c in ro security-profile; do link "$UBIN/$c" "$HOME/.local/bin/$c"; done   # bin/doctor warns if ~/.local/bin is not on the PATH
 
 # Claude Code settings: merge hooks/settings.base.json into ~/.claude/settings.json (union of
 # permissions.deny/ask, together with those of packs/*/permissions.json; each base hook added unless a hook

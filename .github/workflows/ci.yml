@@ -108,7 +108,7 @@ jobs:
           exit "$rc"
 
   release:
-    # Release tags only: the tag, plugin.json and CHANGELOG.md must agree (decision 3.5 of the work log)
+    # Release tags only: the tag, plugin.json and CHANGELOG.md must agree (CONTRIBUTING.md, "Releases")
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 5

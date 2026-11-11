@@ -20,7 +20,7 @@
 #                              output ends on the screen, in a file or in a reader (sets CRED_HIT to the line of
 #                              the list and CRED_WHAT). Needs cred_load.
 #
-# What counts as reading (decision "Leer o copiar, no usar"): a credential path given to a reader (cat, grep,
+# What counts as reading (the rule is: read or copy, no; use, yes): a credential path given to a reader (cat, grep,
 # cp, curl -T…, python -c…; list in the readers files), read with '<', or sent as '@path' / 'file://path'.
 # Using it (ssh -i, --kubeconfig, KUBECONFIG=, source .env), listing it or changing its mode is allowed.
 # Guards against mistakes, not against an adversary: a reader missing from the list, a script that opens the
@@ -335,7 +335,7 @@ cred_check_line() {
   return 0
 }
 
-# --- Commands that print a secret (decision "Mostrar, no usar"): where does their output go?
+# --- Commands that print a secret (the rule is: show, no; use, yes): where does their output go?
 # Parser: the command line on stdin -> 'W<TAB>node<TAB>index<TAB>word' per word and, when a simple command
 # (node) ends, 'N<TAB>node<TAB>parent<TAB>word<TAB>out'. parent/word: the node and the index of its word that
 # holds this node as $(…), `…` or <(…) (-1 at the top). out: where its standard output goes: |<node> piped to
