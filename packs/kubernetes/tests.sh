@@ -11,6 +11,8 @@ ro_ok kubectl get pods -A --context c
 ro_ok kubectl get externalsecrets,clustersecretstores -A --context c
 ro_ok kubectl auth can-i list pods --context c
 ro_no kubectl get pods
+RO_CONTEXTS=c ro_no kubectl get pods --context c --context d
+ro_no kubectl get pods --context c --context=d
 ro_no kubectl get secrets -A --context c
 ro_no kubectl get secret/x -n y --context c
 ro_no kubectl describe Secret x --context c

@@ -10,6 +10,12 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ro_ok helm list -A --kube-context c
 ro_ok helm get metadata r -n n --kube-context c
 ro_no helm get values r --kube-context c
+ro_ok helm status r -n n --kube-context c
+ro_no helm status r --kube-context c -o json
+ro_no helm status r --kube-context c -oyaml
+ro_no helm status r --kube-context c --output=json
+ro_ok helm list -A -o json --kube-context c
+RO_CONTEXTS=c ro_no helm list --kube-context c --kube-context d
 ro_no helm upgrade r x --kube-context c
 ro_no helm list -A
 

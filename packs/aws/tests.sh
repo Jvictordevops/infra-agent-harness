@@ -17,6 +17,23 @@ ro_no aws ec2 run-instances --profile P
 ro_no aws s3 cp s3://a/b . --profile P
 ro_no aws secretsmanager get-secret-value --secret-id x --profile P
 ro_no aws ssm get-parameter --name /x --with-decryption --profile P
+# The CLI takes any unique prefix of an option
+ro_no aws ssm get-parameter --name /x --with-decrypt --profile P
+ro_no aws ssm get-parameters-by-path --path /x --with-d --profile P
+ro_no aws ssm get-parameter --name /x --w --profile P
+ro_no aws ec2 describe-instances --endpoint http://127.0.0.1:9 --profile P
+ro_no aws ec2 describe-instances --endpoint=http://127.0.0.1:9 --profile P
+ro_no aws ec2 describe-instances --deb --profile P
+ro_no aws ec2 describe-instances --prof P
+ro_no aws ec2 describe-instances --profile P --prof Q
+ro_no aws ec2 describe-instances --profile P --profile Q
+RO_PROFILES=P ro_no aws ec2 describe-instances --profile P --profile=Q
+ro_ok aws logs filter-log-events --log-group-name g --end-time 1 --profile P
+ro_ok aws ec2 describe-instances --dry-run --profile P
+ro_ok aws rds describe-db-instances --db-instance-identifier d --profile P
+# A parameter read from a local file
+ro_no aws ec2 describe-tags --filters file:///etc/hostname --profile P
+ro_no aws ssm get-parameter --name fileb:///etc/hostname --profile P
 ro_no aws eks get-token --cluster-name X --profile P
 ro_no aws ecr get-login-password --profile P
 ro_no aws sts assume-role --profile P
@@ -73,6 +90,9 @@ credblk "aws ecr get-login-password --region eu-west-1 | base64 -d"
 credblk "aws ecr-public get-login-password"
 credblk "aws codeartifact get-authorization-token --domain d"
 credblk "aws sts get-session-token"
+credblk "aws ssm get-parameter --name /x --with-decrypt --profile p"
+credblk "aws ssm get-parameters --names /x --with-d"
+credok "aws ssm get-parameter --name /x --profile p"
 credblk "aws sts assume-role --role-arn arn:aws:iam::1:role/r --role-session-name s"
 credblk "aws sts assume-role-with-web-identity --role-arn r --web-identity-token t"
 credblk "aws sso get-role-credentials --role-name r --account-id 1 --access-token t"

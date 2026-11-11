@@ -13,6 +13,7 @@ is_secret_res() { # $1 kubectl arg -> 0 if it names Secrets
 
 check_kubectl() {
   local ctx verb="${1-}" sub="${2-}" a
+  opt_once --context "$@"
   ctx="$(opt_val --context "$@")" || deny "kubectl: --context is mandatory"
   in_list "$ctx" "${RO_CONTEXTS-}" || deny "kubectl: context $ctx not in RO_CONTEXTS ($RO_CONTEXTS)"
   case "$verb" in

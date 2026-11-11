@@ -49,6 +49,13 @@ opt_val() { # $1 option, rest args -> value of "--opt X" or "--opt=X"
   return 1
 }
 
+opt_once() { # $1 option, rest args: denies an option given twice (the tool uses the last one, the check reads the first)
+  local o="$1" n=0 a
+  shift
+  for a in "$@"; do case "$a" in "$o"|"$o="*) n=$((n + 1)) ;; esac; done
+  [ "$n" -le 1 ] || deny "$o is given $n times (the tool would use the last one)"
+}
+
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 
 check_path() { # $1 path; REMOTE=1 -> textual checks only (the other machine resolves it)
@@ -181,7 +188,7 @@ check_files() { # $1 tool, rest args
 }
 
 # Packs: each packs/<name>/ro.sh registers its tools with 'ro_tool <tool>' and defines check_<tool>
-# (it may use deny, opt_val, in_list and lower). Every pack under packs/ is loaded, but only the tools of the
+# (it may use deny, opt_val, opt_once, in_list and lower). Every pack under packs/ is loaded, but only the tools of the
 # packs chosen in the security profile run (packs= in ~/.config/infra-agent-harness/profile; packs/README.md).
 # shellcheck source=bin/lib/packs.sh
 . "$HARNESS/bin/lib/packs.sh"

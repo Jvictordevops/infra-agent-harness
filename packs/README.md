@@ -6,7 +6,7 @@ A pack holds the safety rules for one technology, and their tests. The guards an
 |---|---|---|---|
 | `aws` | `aws` | `describe-`/`list-`/`get-`/`batch-get-`/`lookup-`/`search-`, `s3 ls`, `--profile` mandatory | `delete-*`, `terminate-*`, `stop-*`, `s3 rb`, `s3 rm` |
 | `kubernetes` | `kubectl`, `eksctl`, `argocd`, `flux`, `k9s`, `kubectx`, `kubens` | `kubectl get`, `describe`, `logs`, `top`, `events`…, `--context` mandatory, never Secrets | `delete`, `drain`, `cordon`, `scale --replicas 0`, `rollout undo` |
-| `helm` | `helm`, `helmfile` | `list`, `status`, `history`, `get metadata`, `--kube-context` mandatory | `helm uninstall`, `helmfile apply\|destroy\|delete` |
+| `helm` | `helm`, `helmfile` | `list`, `status` (as a table), `history`, `get metadata`, `--kube-context` mandatory | `helm uninstall`, `helmfile apply\|destroy\|delete` |
 | `terraform` | `terraform`, `tofu`, `terragrunt` | none (`bin/ro` does not run them) | `destroy`, `import`, `apply -destroy`, `state rm\|push\|replace-provider` |
 
 Deny rules (Claude Code refuses the command) cover the main destructive verbs of each pack. Ask rules (Claude Code asks you first) cover `apply` of the three Terraform tools, `kubectl apply` and `helm install|upgrade`; the `permissive` profile drops them (below).
@@ -67,12 +67,12 @@ All files are optional. Any other file name is an error (`tests/packs.sh`).
 
 | File | Read by | Format |
 |---|---|---|
-| `ro.sh` | `bin/ro` | Bash, sourced. It calls `ro_tool <tool>` for each tool and defines `check_<tool>`, which gets the arguments after the tool and calls `deny "<reason>"` to refuse. Helpers: `deny`, `opt_val <option> "$@"` (value of `--opt X` or `--opt=X`), `in_list <value> <comma list>`, `lower`. A pack cannot register a core tool or a tool of another pack. |
+| `ro.sh` | `bin/ro` | Bash, sourced. It calls `ro_tool <tool>` for each tool and defines `check_<tool>`, which gets the arguments after the tool and calls `deny "<reason>"` to refuse. Helpers: `deny`, `opt_val <option> "$@"` (value of `--opt X` or `--opt=X`), `opt_once <option> "$@"` (denies an option given twice: the tool would use the last one, the check reads the first), `in_list <value> <comma list>`, `lower`. If the tool takes shortened options, as the aws CLI does (`--with-decrypt`), the check must refuse those too. A pack cannot register a core tool or a tool of another pack. |
 | `guard-tools` | `ro-guard` | One command name per line (`[a-z0-9_-]`). In read-only mode, these commands are blocked outside `bin/ro`. |
 | `destructive.rules` | `block-destructive-platform` | One `name\|regex` per line (extended regex, matched against the whole command). The name goes to the decision log. Placeholders: `<P>` start of a tool name (also after `/`, a quote or `$(`), `<S>` whitespace, `<G>` any tokens in the same command segment (never across `;`, `\|` or `&`), `<E>` end of a word. |
 | `credential-files` | `credential-guard`, `bin/ro`, `bin/link-harness` | One pattern per line: `~/<path>` (from the home directory) or `**/<name>` (that file name anywhere); `*` is any text. Each line also becomes a `Read(~/<path>)` or `Read(//**/<name>)` deny rule. |
 | `credential-readers` | `credential-guard` | One `<command>` or `<command> <word>` per line (a reader only when `<word>` is one of its arguments), like `hooks/credential-guard/readers`. |
-| `secret-commands` | `credential-guard` | One `<command> <word> …` per line: a command that prints a secret when all the words are among its arguments, in any order; `*` is any text (`aws ssm get-parameter* --with-decryption`). Like `hooks/credential-guard/secret-commands`. See "Commands that show secrets". |
+| `secret-commands` | `credential-guard` | One `<command> <word> …` per line: a command that prints a secret when all the words are among its arguments, in any order; `*` is any text (`aws ssm get-parameter* --w*`: the aws CLI takes `--with-decryption` shortened too). Like `hooks/credential-guard/secret-commands`. See "Commands that show secrets". |
 | `permissions.json` | `bin/link-harness`, `bin/doctor` | `{"deny": ["Bash(…)"], "ask": ["Bash(…)"]}`, Claude Code permission rules. They are merged into `~/.claude/settings.json` after the core ones. |
 | `tests.sh` | `tests/run`, `bin/doctor` | The pack's own tests, with the helpers of `tests/lib/pack-test.sh`: `ro_ok`/`ro_no`, `blk`/`alw`, `denied`/`asked`/`unruled`, `guarded`. |
 | `domains` | `bin/link-harness`, `bin/doctor` | Domains the sandbox of the `strict` profile allows when the pack is chosen, one per line: `host`, `*.domain` or `host:port` (`bin/lib/packs.sh` `packs_sandbox`). Only domains checked inside the sandbox; any other is refused (`strictAllowlist`). |
