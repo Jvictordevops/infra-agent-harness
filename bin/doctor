@@ -2,13 +2,23 @@
 # Check the setup of this machine for the harness. Read-only: it never changes your home or your repos
 # (link-harness runs with --dry-run; the only write is git fetch in the harness checkout, skipped with
 # IAH_NO_FETCH=1). Prints one summary to paste back. Never prints keys or tokens.
-# Usage: bin/doctor
+# Usage: bin/doctor [--tests]
+#   --tests   also run the tests of the guards and the packs on this machine (a few minutes on WSL)
 # Optional modules active for the repository (.harness.conf "modules=a,b", IAH_MODULES overrides) add
 # their checks from modules/<name>/doctor.sh.
 # Repository with your works: $IAH_REPO, else the git repository of the current directory (optional).
 # 'cond && ok … || warn …' is safe: ok/warn/fail only append to an array and never fail.
 # shellcheck disable=SC2015,SC2088
 set -uo pipefail
+
+RUN_TESTS=0
+for a in "$@"; do
+  case "$a" in
+    --tests) RUN_TESTS=1 ;;
+    -h|--help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "usage: doctor [--tests]" >&2; exit 2 ;;
+  esac
+done
 
 HARNESS="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")/.." && pwd)"
 # shellcheck source-path=SCRIPTDIR source=lib/vocab.sh
@@ -144,13 +154,18 @@ if [ "$pprof" = strict ]; then
   fi
 elif [ "$sbstate" = left ]; then warn "the sandbox of strict is still on in settings.json; security profile $pprof turns it off (bin/link-harness)"; fi
 [ -x "$HARNESS/bin/hooks/commit-msg" ] && ok "commit-msg hook present" || fail "bin/hooks/commit-msg missing or not executable"
-tlog="$(mktemp)"
-for t in tests/block-destructive.sh tests/commit-msg.sh tests/credential-guard.sh tests/floor.sh tests/packs.sh tests/profile.sh tests/ro.sh "$HARNESS"/packs/*/tests.sh; do
-  t="${t#"$HARNESS"/}"
-  [ -f "$HARNESS/$t" ] || continue
-  IAH_HOOK_LOG="$tlog" bash "$HARNESS/$t" >/dev/null 2>&1 && ok "$t green" || fail "$t failing: run it to see which case"
-done
-rm -f "$tlog"
+command -v jq >/dev/null && ok "guards can read commands (jq)" || fail "jq missing: the guards block every command until it is installed (they fail closed)"
+if [ "$RUN_TESTS" = 1 ]; then
+  tlog="$(mktemp)"
+  for t in tests/block-destructive.sh tests/commit-msg.sh tests/credential-guard.sh tests/fail-closed.sh tests/floor.sh tests/packs.sh tests/profile.sh tests/ro.sh "$HARNESS"/packs/*/tests.sh; do
+    t="${t#"$HARNESS"/}"
+    [ -f "$HARNESS/$t" ] || continue
+    IAH_HOOK_LOG="$tlog" bash "$HARNESS/$t" >/dev/null 2>&1 && ok "$t green" || fail "$t failing: run it to see which case"
+  done
+  rm -f "$tlog"
+else
+  ok "tests of the guards and packs not run (doctor --tests runs them)"
+fi
 
 # 5. GitHub credentials (names and prefixes only)
 if command -v gh >/dev/null; then

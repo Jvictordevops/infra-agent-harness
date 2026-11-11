@@ -25,7 +25,7 @@ Generic notes for the agent tools the harness installs into (Claude Code, Claude
   - From Git Bash, prefix `MSYS_NO_PATHCONV=1` so it does not rewrite `/home/...` paths.
 - If the SSH agent lives in a password manager, keep it unlocked for push, pull and signed commits (`agent refused operation` usually means a locked vault).
 - Claude hooks (`hooks/*`) are registered in the profile inside WSL (`~/.claude/settings.json`); the Windows app profile only receives `CLAUDE.md` and the skills.
-- `bin/doctor` checks a machine in a few seconds and prints no secrets. It is read-only: it runs `link-harness --dry-run` and reports what `bin/link-harness` would change.
+- `bin/doctor` checks a machine in a few seconds and prints no secrets. It is read-only: it runs `link-harness --dry-run` and reports what `bin/link-harness` would change. `bin/doctor --tests` also runs the tests of the guards and the packs on that machine (a few minutes on WSL).
 
 ## Read-only executors (`bin/ro`)
 
@@ -67,7 +67,7 @@ Generic notes for the agent tools the harness installs into (Claude Code, Claude
 - It only adds: it never removes anything, skips a hook whose script is already registered, and leaves a `settings.json.bak-<date>` copy when the file changes. It needs `jq`.
 - The guards fail closed: without `jq`, or with a hook input they cannot parse, they block the call (exit 2) and say why (`hooks/lib/fail-closed.sh`, `tests/fail-closed.sh`). A guard that stopped halfway would let the command run.
 - `hooks/confidence-nudge` (UserPromptSubmit) is not in the base file; register it yourself if you want it. It adds a reminder to end troubleshooting conclusions with a confidence level.
-- `bin/doctor` checks the registration (in plugin mode: registered by the plugin's `hooks/hooks.json`; WARN if the same guard is also in `~/.claude/settings.json`) and runs the guards' tests (`tests/block-destructive.sh`, `tests/credential-guard.sh`, `tests/floor.sh`, `tests/packs.sh`, `tests/ro.sh` and each `packs/<name>/tests.sh`).
+- `bin/doctor` checks the registration (in plugin mode: registered by the plugin's `hooks/hooks.json`; WARN if the same guard is also in `~/.claude/settings.json`) and, with `--tests`, runs the guards' tests (`tests/block-destructive.sh`, `tests/credential-guard.sh`, `tests/fail-closed.sh`, `tests/floor.sh`, `tests/packs.sh`, `tests/ro.sh` and each `packs/<name>/tests.sh`).
 
 ### Decision log
 

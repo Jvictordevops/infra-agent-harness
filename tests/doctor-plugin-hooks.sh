@@ -44,6 +44,14 @@ grep -q "^FAIL  hook credential-guard registered nowhere" <<<"$out" || ko "no FA
 
 # 4. Manual mode unchanged: guards must be in settings.json
 out="$(cd "$TMP" && IAH_PLUGIN=0 HOME="$H" "$ROOT/bin/doctor" 2>&1)"
+# The tests of the guards run only with --tests (they take minutes on WSL)
+case "$out" in *"tests/ro.sh green"*) echo "FAIL: doctor ran the guard tests without --tests"; fail=1 ;; esac
+case "$out" in *"not run (doctor --tests runs them)"*) ;; *) echo "FAIL: doctor does not say the guard tests were not run"; fail=1 ;; esac
+tout="$(cd "$TMP" && IAH_PLUGIN=0 HOME="$H" IAH_NO_FETCH=1 "$ROOT/bin/doctor" --tests 2>&1)"
+for t in tests/fail-closed.sh tests/floor.sh tests/ro.sh packs/aws/tests.sh; do
+  case "$tout" in *"OK    $t green"*) ;; *) echo "FAIL: doctor --tests does not report $t green"; fail=1 ;; esac
+done
+(cd "$TMP" && HOME="$H" "$ROOT/bin/doctor" --bogus >/dev/null 2>&1); [ $? = 2 ] || { echo "FAIL: doctor --bogus should end with 2"; fail=1; }
 grep -q "^FAIL  hook ro-guard.sh not registered in ~/.claude/settings.json" <<<"$out" || ko "manual mode: no FAIL without settings hooks"
 
 # 5. Security profile: with permissive, ask rules of the packs left in settings.json are a WARN and are not
