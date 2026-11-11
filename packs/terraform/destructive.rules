@@ -2,3 +2,4 @@
 terraform-destroy-import|<P>(terraform|tofu|terragrunt)<G><S>(destroy|import)<E>
 terraform-apply-destroy|<P>(terraform|tofu|terragrunt)<G><S>apply<G><S>-destroy<E>
 terraform-state-write|<P>(terraform|tofu|terragrunt)<G><S>state<G><S>(rm|push|replace-provider)<E>
+terraform-workspace-delete|<P>(terraform|tofu|terragrunt)<G><S>workspace<G><S>delete<E>

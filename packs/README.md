@@ -4,10 +4,10 @@ A pack holds the safety rules for one technology, and their tests. The guards an
 
 | Pack | Tools | `bin/ro` reads | Destructive commands blocked |
 |---|---|---|---|
-| `aws` | `aws` | `describe-`/`list-`/`get-`/`batch-get-`/`lookup-`/`search-`, `s3 ls`, `--profile` mandatory | `delete-*`, `terminate-*`, `stop-*`, `s3 rb`, `s3 rm` |
-| `kubernetes` | `kubectl`, `eksctl`, `argocd`, `flux`, `k9s`, `kubectx`, `kubens` | `kubectl get`, `describe`, `logs`, `top`, `events`…, `--context` mandatory, never Secrets | `delete`, `drain`, `cordon`, `scale --replicas 0`, `rollout undo` |
-| `helm` | `helm`, `helmfile` | `list`, `status` (as a table), `history`, `get metadata`, `--kube-context` mandatory | `helm uninstall`, `helmfile apply\|destroy\|delete` |
-| `terraform` | `terraform`, `tofu`, `terragrunt` | none (`bin/ro` does not run them) | `destroy`, `import`, `apply -destroy`, `state rm\|push\|replace-provider` |
+| `aws` | `aws` | `describe-`/`list-`/`get-`/`batch-get-`/`lookup-`/`search-`, `s3 ls`, `--profile` mandatory | `delete-*`, `terminate-*`, `stop-*`, `s3 rb`, `s3 rm`, `s3 sync --delete` |
+| `kubernetes` | `kubectl`, `eksctl`, `argocd`, `flux`, `k9s`, `kubectx`, `kubens` | `kubectl get`, `describe`, `logs`, `top`, `events`…, `--context` mandatory, never Secrets | `kubectl delete`, `drain`, `cordon`, `scale --replicas 0`, `rollout undo`, `replace --force`; `eksctl delete`; `argocd … delete\|rm`; `flux delete\|uninstall` |
+| `helm` | `helm`, `helmfile` | `list`, `status` (as a table), `history`, `get metadata`, `--kube-context` mandatory | `helm uninstall`, `helm rollback`, `helmfile apply\|sync\|destroy\|delete` |
+| `terraform` | `terraform`, `tofu`, `terragrunt` | none (`bin/ro` does not run them) | `destroy`, `import`, `apply -destroy`, `state rm\|push\|replace-provider`, `workspace delete` |
 
 Deny rules (Claude Code refuses the command) cover the main destructive verbs of each pack. Ask rules (Claude Code asks you first) cover `apply` of the three Terraform tools, `kubectl apply` and `helm install|upgrade`; the `permissive` profile drops them (below).
 

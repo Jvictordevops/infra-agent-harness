@@ -3,7 +3,9 @@
     "Bash(aws * delete-*)",
     "Bash(aws * terminate-*)",
     "Bash(aws s3 rb *)",
-    "Bash(aws s3 rm *)"
+    "Bash(aws s3 rm *)",
+    "Bash(aws s3 sync * --delete*)",
+    "Bash(aws * s3 sync * --delete*)"
   ],
   "ask": []
 }

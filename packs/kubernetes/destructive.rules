@@ -2,3 +2,7 @@
 kubectl-delete-drain-cordon|<P>kubectl<G><S>(delete|drain|cordon)<E>
 kubectl-scale-to-zero|<P>kubectl<G><S>scale<G><S>--replicas(=|<S>)0<E>
 kubectl-rollout-undo|<P>kubectl<G><S>rollout<G><S>undo<E>
+kubectl-replace-force|<P>kubectl<G><S>replace<G><S>--force<E>
+eksctl-delete|<P>eksctl<G><S>delete<E>
+argocd-delete|<P>argocd<G><S>(delete|rm)<E>
+flux-delete-uninstall|<P>flux<G><S>(delete|uninstall)<E>

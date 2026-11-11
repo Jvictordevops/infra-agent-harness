@@ -50,6 +50,10 @@ blk "AWS_PROFILE=p aws ec2 terminate-instances --instance-ids i-1"
 blk "aws rds stop-db-instance --db-instance-identifier x"
 alw "aws ec2 describe-instances --profile pro"
 alw "aws s3 ls s3://b/rm"
+blk "aws s3 sync . s3://b --delete"
+blk "aws --profile p s3 sync s3://a s3://b --delete --dryrun"
+alw "aws s3 sync . s3://b"
+alw "aws s3 sync . s3://b --exclude '*.delete'"
 alw "aws eks list-clusters"
 
 # permissions.deny
@@ -57,6 +61,8 @@ denied "aws ec2 terminate-instances --instance-ids i-1"
 denied "aws --profile p iam delete-role --role-name x"
 denied "aws s3 rb s3://x"
 denied "aws s3 rm s3://x --recursive"
+denied "aws s3 sync . s3://b --delete"
+unruled "aws s3 sync . s3://b"
 unruled "aws ec2 describe-instances --profile p"
 
 # ro-guard: aws only through bin/ro

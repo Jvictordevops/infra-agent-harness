@@ -3,7 +3,8 @@
     "Bash(kubectl delete *)",
     "Bash(kubectl * delete *)",
     "Bash(kubectl drain *)",
-    "Bash(kubectl * drain *)"
+    "Bash(kubectl * drain *)",
+    "Bash(eksctl delete *)"
   ],
   "ask": [
     "Bash(kubectl apply *)",

@@ -1,3 +1,4 @@
 # Pack aws: destructive commands block-destructive-platform blocks. 'name|regex' per line; placeholders in packs/README.md.
 aws-delete-terminate-stop|<P>aws<G><S>(delete-|terminate-|stop-)[a-z0-9-]+<E>
 aws-s3-rb-rm|<P>aws<G><S>s3<G><S>(rb|rm)<E>
+aws-s3-sync-delete|<P>aws<G><S>s3<G><S>sync<G><S>--delete<E>
