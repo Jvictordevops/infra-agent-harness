@@ -1,6 +1,6 @@
 {
   "name": "infra-agent-harness",
-  "version": "0.1.0-dev",
+  "version": "0.1.0",
   "description": "A safe-by-default harness for AI coding agents that work on real infrastructure, with traceable work.",
   "author": { "name": "Jvictordevops" },
   "homepage": "https://github.com/Jvictordevops/infra-agent-harness",

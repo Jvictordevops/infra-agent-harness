@@ -6,6 +6,10 @@ A release is a tag `vX.Y.Z` on `main`. The tag, `version` in `.claude-plugin/plu
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.0] - 2026-11-11
+
 First public version. Everything below is new.
 
 ### Added
@@ -32,4 +36,4 @@ First public version. Everything below is new.
 - The guards stop mistakes, not an adversary: see `docs/threat-model.md`.
 - A command whose text only mentions a blocked command (in a commit message, a `grep` pattern or a heredoc) can be blocked too.
 - Hooks are registered for Claude Code only. Copilot CLI gets the skills and the instructions, not the guards.
-- Tested on Linux, WSL2 and macOS (bash 3.2). Windows without WSL is not supported.
+- Tested on Linux, WSL2 and macOS (bash 3.2 and its awk). The sandbox of the `strict` profile has been used on WSL2 only. Windows without WSL is not supported.
