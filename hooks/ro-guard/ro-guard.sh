@@ -52,9 +52,10 @@ printf '%s\n' "$CMD" | awk '{ gsub(/&&|\|\||[;|&()`]|\$\(/, "\n"); print }' | {
   while IFS= read -r seg; do
     # shellcheck disable=SC2086  # split the segment into words on purpose (globbing is off)
     set -- $seg
-    while [ $# -gt 0 ]; do # drop env assignments and wrappers to reach the real command
+    while [ $# -gt 0 ]; do # drop env assignments, wrappers and shell keywords to reach the real command
       case "$1" in
         [A-Za-z_]*=*|sudo|env|command|exec|time|nohup|nice|xargs|-*) shift ;;
+        '{'|'}'|'!'|if|then|else|elif|do|while|until) shift ;;   # for p in a b; do <tool> …; done · if <tool> …
         timeout) shift; [ $# -gt 0 ] && shift ;;
         *) break ;;
       esac
@@ -66,7 +67,7 @@ printf '%s\n' "$CMD" | awk '{ gsub(/&&|\|\||[;|&()`]|\$\(/, "\n"); print }' | {
       block "'$base' outside bin/ro."
     fi
     case "$base" in
-      bash|sh|zsh|dash|eval|source|.)
+      bash|sh|zsh|dash|ksh|eval|source|.|watch)
         if printf '%s' "$seg" | grep -Eqw "$FORBIDDEN"; then block "'$base' running a forbidden command."; fi ;;
     esac
   done
