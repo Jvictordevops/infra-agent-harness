@@ -4,14 +4,18 @@
 # switching the mode off (only the user does it, from a terminal). No mode file -> only the next check runs.
 # In every mode it blocks changing the security profile (bin/security-profile set, the profile file).
 # Guards against mistakes, not against an adversary: a script written on the fly is not inspected.
-# Exit 2 = block (the reason goes to the agent on stderr).
+# Exit 2 = block (the reason goes to the agent on stderr). Without jq, or with an input it cannot parse, it
+# blocks too (hooks/lib/fail-closed.sh).
 set -uo pipefail
 # shellcheck source=hooks/lib/log-decision.sh
 . "$(dirname "$0")/../lib/log-decision.sh"
+# shellcheck source=hooks/lib/fail-closed.sh
+. "$(dirname "$0")/../lib/fail-closed.sh"
 
 MODE="${RO_MODE_FILE:-$HOME/.config/infra-agent-harness/ro-mode}"
 INPUT="$(cat)"   # always read stdin: the caller may fail writing to a closed pipe
-CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)"
+guard_need_jq ro-guard
+CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)" || guard_bad_input ro-guard
 
 # Always, whatever the mode: the security profile belongs to the user (bin/security-profile, packs/README.md).
 # Blocks 'security-profile set', any command that names the profile file and its override variable.

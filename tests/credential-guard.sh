@@ -246,8 +246,8 @@ grep -qF 'credential ~/.aws/credentials' "$IAH_HOOK_LOG" || ko "the log does not
 msg="$(jq -n '{tool_name:"Bash", tool_input:{command:"cat ~/.netrc"}}' | "$HOOK" 2>&1 >/dev/null)"
 case "$msg" in *'~/.netrc is a credential file'*'ask the user'*) ;; *) ko "message: $msg" ;; esac
 
-# --- Bad input never blocks
-[ "$(printf 'not json' | "$HOOK" >/dev/null 2>&1; echo $?)" = 0 ] || ko "bad input blocked"
+# --- An input that is not JSON blocks (the guard fails closed, tests/fail-closed.sh); an empty one has nothing to check
+[ "$(printf 'not json' | "$HOOK" >/dev/null 2>&1; echo $?)" = 2 ] || ko "an input that is not JSON was not blocked"
 [ "$(printf '{}' | "$HOOK" >/dev/null 2>&1; echo $?)" = 0 ] || ko "empty input blocked"
 
 [ "$fail" = 0 ] && echo "credential-guard: all tests passed"

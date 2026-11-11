@@ -10,17 +10,21 @@
 # Credential paths: hooks/credential-guard/credential-files + packs/*/credential-files. Readers:
 # hooks/credential-guard/readers + packs/*/credential-readers. The same paths are Read(…) deny rules
 # (bin/link-harness), the second lock. Guards against mistakes, not against an adversary (hooks/lib/credentials.sh).
-# Exit 2 = block (the reason goes to the agent on stderr). Tests: tests/credential-guard.sh, tests/floor.sh
+# Exit 2 = block (the reason goes to the agent on stderr). Without jq, or with an input it cannot parse, it
+# blocks too (hooks/lib/fail-closed.sh). Tests: tests/credential-guard.sh, tests/floor.sh, tests/fail-closed.sh
 set -uo pipefail
 HERE="$(dirname "$0")"
 # shellcheck source=hooks/lib/log-decision.sh
 . "$HERE/../lib/log-decision.sh"
 # shellcheck source=hooks/lib/credentials.sh
 . "$HERE/../lib/credentials.sh"
+# shellcheck source=hooks/lib/fail-closed.sh
+. "$HERE/../lib/fail-closed.sh"
 shopt -u patsub_replacement 2>/dev/null || true
 
 INPUT="$(cat)"   # always read stdin: the caller may fail writing to a closed pipe
-TOOL="$(printf '%s' "$INPUT" | jq -r '.tool_name // "Bash"' 2>/dev/null)"
+guard_need_jq credential-guard
+TOOL="$(printf '%s' "$INPUT" | jq -r '.tool_name // "Bash"' 2>/dev/null)" || guard_bad_input credential-guard
 cred_load "$HERE/../.."
 
 block() { # $1 what the agent tried, $2 why

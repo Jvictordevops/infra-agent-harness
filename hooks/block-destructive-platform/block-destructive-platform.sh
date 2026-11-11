@@ -3,13 +3,17 @@
 # Same API as block-git-write: JSON on stdin, JSON decision on stdout, exit 0.
 # Matches the tool anywhere in the command (also inside ssh '…' or bash -c "…") and allows any
 # tokens between the tool and the verb (-n prod, --profile pro, -chdir=x), but never across ; | &.
-# Guards against mistakes, not against an adversary. Tests: tests/block-destructive.sh, tests/packs.sh
+# Guards against mistakes, not against an adversary. Without jq, or with an input it cannot parse, it blocks
+# (exit 2, hooks/lib/fail-closed.sh). Tests: tests/block-destructive.sh, tests/packs.sh, tests/fail-closed.sh
 set -euo pipefail
 # shellcheck source=hooks/lib/log-decision.sh
 . "$(dirname "$0")/../lib/log-decision.sh"
+# shellcheck source=hooks/lib/fail-closed.sh
+. "$(dirname "$0")/../lib/fail-closed.sh"
 
-INPUT=$(cat)
-CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""')
+INPUT=$(cat)   # always read stdin: the caller may fail writing to a closed pipe
+guard_need_jq block-destructive-platform
+CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null) || guard_bad_input block-destructive-platform
 
 P='(^|[^[:alnum:]_-])'           # start of the tool name (allows /usr/bin/, quotes, $( )
 S='[[:space:]]+'
