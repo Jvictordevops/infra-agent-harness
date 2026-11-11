@@ -41,6 +41,21 @@ no git -C "$R" -c core.pager=x log
 no git -C "$R" diff --output=/tmp/x
 no git -C /etc log
 no git log
+# Paths outside the repository of -C: 'git diff' would show any file as a plain diff, 'blame --contents' too
+no git -C "$R" diff /dev/null /etc/hostname
+no git -C "$R" diff values.yaml "$TMP/outside.txt"
+no git -C "$R" diff ../../outside.txt values.yaml
+no git -C "$R" diff charts/../../x values.yaml
+no git -C "$R" diff "~/.netrc" values.yaml
+ok git -C "$R" grep -n "/api/v1" -- charts/
+ok git -C "$R" log -S "/etc/app" --oneline
+no git -C "$R" blame --contents /etc/hostname values.yaml
+no git -C "$R" blame --contents=/etc/hostname values.yaml
+ok git -C "$R" diff HEAD~1 -- charts/ values.yaml
+ok git -C "$R" log origin/main..HEAD
+ok git -C "$R" log main...feature/x --oneline
+ok git -C "$R" show HEAD:values.yaml
+ok git -C "$R" log -3 --format=%h -- charts/
 
 ok gh repo list owner --limit 50
 ok gh repo view owner/repo
@@ -106,6 +121,18 @@ no cat "$R/.env"
 no cat "$R/.git/config"
 no cat "$R/terraform.tfstate"
 no find "$R" -name x -delete
+# A list of names read from a file ends up in the error messages: any file would be shown
+no wc --files0-from="$R/values.yaml"
+no wc --files0-from "$R/values.yaml"
+no find -files0-from "$R/values.yaml"
+no grep --file=/etc/hostname "$R/values.yaml"
+no grep x --exclude-from=/etc/hostname "$R/values.yaml"
+ok grep --file="$R/values.yaml" "$R/values.yaml"
+ok wc -l "$R/values.yaml"
+# --host is a host name or an SSH alias, never an option of ssh
+no --host "-oProxyCommand=touch $TMP/pwned" ls "$R"
+no --host "a b" ls "$R"
+no --host 'x;y' ls "$R"
 no find "$R" -exec rm {} ';'
 no tail -f "$R/values.yaml"
 no rm -rf "$R"

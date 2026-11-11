@@ -93,7 +93,16 @@ check_git() {
     *) deny "git: '$sub' not allowed (read-only subcommands only)" ;;
   esac
   for a in "$@"; do
-    case "$a" in --output*|--ext-diff|--no-index|-O*|--open-files-in-pager*) deny "git: $a not allowed" ;; esac
+    case "$a" in --output*|--ext-diff|--no-index|-O*|--open-files-in-pager*|--contents*) deny "git: $a not allowed" ;; esac
+    # diff: paths stay inside the repository of -C. With a path outside it, 'git diff' compares plain files
+    # (as --no-index) and shows any file of the machine. Relative paths and revisions (a..b, HEAD~2) pass.
+    if [ "$sub" = diff ]; then
+      # shellcheck disable=SC2088  # a literal "~" typed by the agent
+      case "$a" in
+        -*) ;;
+        /*|"~"|"~/"*|..|../*|*/..|*/../*) deny "git diff: path outside the repository of -C: $a (use paths relative to it)" ;;
+      esac
+    fi
   done
 }
 
@@ -152,6 +161,10 @@ check_files() { # $1 tool, rest args
       case "$tool $a" in
         "find -delete"|"find -exec"*|"find -ok"*|"find -fprint"*|"find -fls"|"tail -f"|"tail -F"|"tail --follow"*|"tail -r"*)
           deny "$tool: $a not allowed" ;;
+        # They read a list of names from a file and print each one in their errors: any file would be shown
+        *" --files0-from"*|"find -files0-from") deny "$tool: $a not allowed" ;;
+        # A file given as the value of an option is a path like any other
+        "grep --file="*|"grep --exclude-from="*|"grep --include-from="*) check_path "${a#*=}" ;;
         "head -n"|"head -c"|"tail -n"|"tail -c"|"grep -e"|"grep -A"|"grep -B"|"grep -C"|"grep -m"|"stat -f"|"stat -c") value=1 ;;
         "grep -f") value=path ;;
       esac
@@ -249,7 +262,10 @@ mode() {
 host="" check=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --host) host="${2-}"; [ -n "$host" ] || usage; shift 2 ;;
+    --host) host="${2-}"; [ -n "$host" ] || usage
+      # An SSH alias or user@host, never an option of ssh (-oProxyCommand=…)
+      [[ "$host" =~ ^[A-Za-z0-9][A-Za-z0-9._@-]*$ ]] || deny "--host: '$host' is not a host name or an SSH alias"
+      shift 2 ;;
     --check) check=1; shift ;;
     mode) shift; mode "$@"; exit 0 ;;
     -h|--help) usage ;;
