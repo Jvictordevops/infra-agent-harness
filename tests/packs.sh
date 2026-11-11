@@ -12,6 +12,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$TMP"' EXIT
 IAH_HOOK_LOG="$TMP/hook-decisions.jsonl"; export IAH_HOOK_LOG   # keep test blocks out of the real decision log
+IAH_PROFILE_FILE="$TMP/profile"; export IAH_PROFILE_FILE   # not the machine's profile: with packs= chosen there, the demo pack would be left out
 fail=0
 ko() { echo "FAIL: $*"; fail=1; }
 

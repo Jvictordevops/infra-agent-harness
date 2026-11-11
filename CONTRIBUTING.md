@@ -10,13 +10,13 @@ Thanks for looking. This is a small project with one maintainer: short pull requ
 
 ## Set up
 
-You need `bash`, `git`, `jq`, `shellcheck` and `gitleaks`.
+You need `bash`, `git`, `jq`, `shellcheck` and `gitleaks`, plus `zstd`, `openssl` and `python3` for the tests of the evidence module. On Ubuntu: `sudo apt-get install git jq shellcheck zstd openssl python3`; `gitleaks` comes from its [releases page](https://github.com/gitleaks/gitleaks/releases).
 
 ```bash
 git clone https://github.com/Jvictordevops/infra-agent-harness && cd infra-agent-harness
 git config core.hooksPath .githooks     # contributor hook: denylist scan and gitleaks on every commit
 tests/lint                              # shellcheck on every script
-tests/run                               # every test (tests/run ro runs only the scripts with "ro" in their path)
+tests/run                               # every test, about two minutes (tests/run ro runs only the scripts with "ro" in their path)
 ```
 
 To try your changes in Claude Code, load the plugin from your clone instead of GitHub. The session reads the clone in place, so an edit is live in the next session (the guards, in the next command):

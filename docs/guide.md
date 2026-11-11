@@ -10,7 +10,12 @@ About 30 minutes. You need Linux, macOS or WSL2, with `bash`, `git` and `jq`. `g
 for t in git jq gitleaks claude; do command -v "$t" >/dev/null && echo "ok   $t" || echo "MISS $t"; done
 ```
 
-You should see four `ok` lines. Without `jq` the guards block every command (they fail closed), so install it first: `sudo apt-get install jq` or `brew install jq`. On Windows, `claude` lives on the Windows side and everything else inside WSL: run the `claude plugin` commands of step 2 in a Windows terminal and the rest in WSL.
+You should see four `ok` lines. What to do with a `MISS`:
+
+- `jq`: `sudo apt-get install jq` or `brew install jq`. Without it the guards block every command (they fail closed), so install it first.
+- `gitleaks`: `brew install gitleaks`, or the binary from its [releases page](https://github.com/gitleaks/gitleaks/releases) copied to a folder of your PATH. Without it `doctor` shows one `FAIL` in step 5 and commits in your work repo are blocked.
+- `claude`: install Claude Code from its [documentation](https://docs.claude.com/en/docs/claude-code/overview).
+ On Windows, `claude` lives on the Windows side and everything else inside WSL: run the `claude plugin` commands of step 2 in a Windows terminal and the rest in WSL.
 
 ## 2. Install the plugin
 
@@ -72,7 +77,7 @@ cd ~/my-work && ~/.local/share/infra-agent-harness/current/bin/link-harness
 cd ~/my-work && ~/.local/share/infra-agent-harness/current/bin/doctor
 ```
 
-The last line should be `=== 0 fail(s), N warning(s)`. Each `WARN` and `FAIL` line says what to run. Common ones:
+The last line should be `=== 0 fail(s), N warning(s)` (one `FAIL` if you skipped `gitleaks` in step 1). Each `WARN` and `FAIL` line says what to run. Common ones:
 
 - `gitleaks missing`: install it, or your commits in the work repo are blocked.
 - `~/.local/bin is not on the PATH`: add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile and open a new terminal. Until then, type the full path of `ro` and `security-profile`.
@@ -86,11 +91,11 @@ In a Claude Code session opened in `~/my-work`, ask the agent to run `kubectl de
 jq -r '[.ts,.hook,.reason,.command]|@tsv' ~/.local/state/infra-agent-harness/hook-decisions.jsonl | tail -3
 ```
 
-You should see one line with `block-destructive-platform` and the command.
+You should see one line with `block-destructive-platform` and the command. (The file does not exist until a guard has blocked something.)
 
 ## 7. Turn read-only mode on
 
-Do this when the cloud role of the agent can write (for example an administrator role that is the only one you have). From a terminal, not from the agent:
+Do this when the cloud role of the agent can write (for example an administrator role that is the only one you have). From a terminal, not from the agent. If the terminal answers `ro: command not found`, `~/.local/bin` is not on your PATH yet (step 5): open a new terminal after adding it, or type `~/.local/bin/ro`.
 
 ```bash
 ro mode on "admin role in use"
@@ -100,7 +105,7 @@ ro mode on "admin role in use"
 ro mode status
 ```
 
-You should see `ro: ON since <date> admin role in use`. Now the agent reaches clouds, clusters and other machines only through `ro`, one read command at a time:
+You should see `ro: ON since <date> admin role in use`. Now the agent reaches clouds, clusters and other machines only through `ro`, one read command at a time. These two need the `aws` and `kubectl` tools installed and a profile and a context of yours in place of `dev`; to see only whether `ro` would allow a command, without running it, put `--check` after `ro` (it prints `ok` or the reason):
 
 ```bash
 ro aws eks list-clusters --profile dev --region eu-west-1
@@ -140,7 +145,7 @@ cd ~/my-work && ~/.local/share/infra-agent-harness/current/bin/link-harness
 
 `strict` needs `bubblewrap` and `socat` on Linux and WSL2 (`sudo apt-get install bubblewrap socat`), and it changes daily work: you run `git commit` and `git push` yourself. Read "Security profile" in [tools.md](tools.md) before you choose it. Go back with `security-profile set standard` and `link-harness` again.
 
-To use only some packs (the tools `ro` runs and the domains of `strict`): `security-profile set standard --packs aws,kubernetes`. Every installed pack keeps blocking its destructive commands whatever you choose.
+To use only some packs (the tools `ro` runs and the domains of `strict`): `security-profile set standard --packs aws,kubernetes`. Every installed pack keeps blocking its destructive commands whatever you choose. The choice of packs stays when you change the profile later: go back to all of them with `--packs all`.
 
 ## 9. Start your first work
 

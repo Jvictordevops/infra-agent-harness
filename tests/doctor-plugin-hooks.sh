@@ -7,6 +7,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(cd "$(mktemp -d)" && pwd -P)"   # physical path: macOS temp dirs sit behind the /var -> /private/var link
 trap 'rm -rf "$TMP"' EXIT
+unset IAH_PROFILE_FILE   # the profile of this test lives under its throwaway HOME; a variable from outside would win
 fail=0
 ko() { echo "FAIL: $1"; fail=1; }
 export GIT_CONFIG_NOSYSTEM=1 IAH_NO_FETCH=1 IAH_PLUGIN=1 IAH_STABLE_LINK="$TMP/share/current" IAH_HOOK_LOG="$TMP/hook.log"

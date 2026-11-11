@@ -5,6 +5,7 @@
 # 'cond && ok || ko' is intended: ko exits.
 # shellcheck disable=SC2015
 set -euo pipefail
+for need in zstd openssl python3; do command -v "$need" >/dev/null 2>&1 || { echo "evidence-e2e: this test needs '$need' (CONTRIBUTING.md, \"Set up\")"; exit 1; }; done
 MOD="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source-path=SCRIPTDIR source=../../../tests/lib/portable.sh
 . "$MOD/../../tests/lib/portable.sh"   # grep_q

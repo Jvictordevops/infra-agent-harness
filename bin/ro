@@ -249,6 +249,7 @@ run() { # $@ = tool args… (already validated)
   set -- ${args[@]+"${args[@]}"}
   export AWS_PAGER="" NO_COLOR=1
   [ "$(uname)" = Darwin ] && export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+  command -v "$tool" >/dev/null 2>&1 || { echo "ro: '$tool' is not installed on this machine (the command is allowed; install the tool to run it)" >&2; exit 127; }
   case "$tool" in
     git) exec git --no-pager --no-optional-locks "$@" ;;
     gh) GH_PAGER=cat GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 exec gh "$@" ;;
