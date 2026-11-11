@@ -144,7 +144,8 @@ function maybe(p, raw,   i) {
   for (i = 1; i <= nanch; i++) if (anch[i] == "*" || index(p, anch[i]) > 0) return 1
   return 0
 }
-BEGIN { nanch = split(anchors, anch, "\n"); if (anch[nanch] == "") nanch-- }
+# The anchors come in the environment: the awk of macOS refuses a newline in a -v value
+BEGIN { home = ENVIRON["CRED_HOME"]; nanch = split(ENVIRON["CRED_ANCHORS"], anch, "\n"); if (anch[nanch] == "") nanch-- }
 function emit_word(   w, t, n, i, parts, p, pr, flag, l) {
   w = word; word = ""; inword = 0
   if (hdpend) { hdm = unlit(w); sub(/^-/, "", hdm); hdpend = 0; return }
@@ -323,7 +324,10 @@ cred_check_line() {
   local depth="${2:-0}" kind a b c d out files=""
   local _CW=() _CI=() _CF=() _CP=() _CL=()
   if [ "$depth" = 0 ]; then _sec_files; files="$_SEC_FILES"; SEC_LINES=(); SEC_PICKED="$1"; fi
-  out="$(printf '%s\n' "$1" | SEC_FILES="$files" awk -v anchors="$CRED_ANCHORS" -v home="$HOME" "$_CRED_AWK")"
+  # A parser that fails must not look like a line with nothing in it: the caller blocks (CRED_WHAT says why)
+  if ! out="$(printf '%s\n' "$1" | SEC_FILES="$files" CRED_ANCHORS="$CRED_ANCHORS" CRED_HOME="$HOME" awk "$_CRED_AWK" 2>/dev/null)"; then
+    CRED_HIT="(none)"; CRED_WHAT="the command could not be parsed by awk on this machine, so it is blocked"; return 1
+  fi
   while IFS=$'\t' read -r kind a b c d; do
     case "$kind" in
       K) SEC_LINES+=("$a") ;;
@@ -573,7 +577,9 @@ sec_check_line() {
   if [ "$depth" = 0 ] && [ "${SEC_PICKED-}" != "$1" ]; then cred_check_line "$1" || true; fi
   [ "${#SEC_LINES[@]}" -gt 0 ] || return 0
   local _SW=() _SNW=() _SP=() _SPW=() _SO=() _SN=() _CW=() _SEC_S=0 _SEC_CMD="" _SEC_TEE=0 _SEC_INNER=""
-  out="$(printf '%s\n' "$1" | awk "$_SEC_AWK")"
+  if ! out="$(printf '%s\n' "$1" | awk "$_SEC_AWK" 2>/dev/null)"; then
+    CRED_HIT="(none)"; CRED_WHAT="not parsed by awk on this machine, so blocked"; return 1
+  fi
   while IFS=$'\t' read -r kind a b c d; do
     case "$kind" in
       W) _SW[a * 100000 + b]="$c"; _SNW[a]=$((b + 1)) ;;

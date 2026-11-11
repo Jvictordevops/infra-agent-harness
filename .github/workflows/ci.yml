@@ -48,6 +48,15 @@ jobs:
           git config --global init.defaultBranch main
       - name: Tests
         run: tests/run
+      - name: Guard tests with the awk of macOS
+        # The macOS job runs on release tags only. Its awk (the original awk) is stricter than gawk and mawk:
+        # run the tests of the guards and the packs with it on every push, so a break shows here first.
+        run: |
+          sudo apt-get install -y -qq original-awk >/dev/null
+          mkdir -p "$RUNNER_TEMP/bwk" && ln -s "$(command -v original-awk)" "$RUNNER_TEMP/bwk/awk"
+          export PATH="$RUNNER_TEMP/bwk:$PATH"
+          awk --version | head -n1
+          for t in credential-guard fail-closed floor ro block-destructive packs/; do tests/run "$t"; done
 
   test-macos:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')

@@ -39,6 +39,17 @@ for g in $GUARDS; do
   case "$out" in *"$g: cannot read the hook input"*) ;; *) echo "FAIL: $g with a broken input does not say why: $out"; fail=1 ;; esac
 done
 
+# An awk that fails (the awk of another system that rejects the program): the two guards that parse with awk
+# block instead of seeing an empty command line
+BADAWK="$TMP/badawk"; mkdir -p "$BADAWK"
+printf '#!/bin/sh\ncat >/dev/null\necho "awk: syntax error" >&2\nexit 2\n' > "$BADAWK/awk"; chmod +x "$BADAWK/awk"
+: > "$RO_MODE_FILE"   # ro-guard parses the command only in read-only mode
+for g in ro-guard credential-guard; do
+  out="$(printf '%s' "$INPUT" | PATH="$BADAWK:$PATH" "$ROOT/hooks/$g/$g.sh" 2>&1)"; rc=$?
+  [ "$rc" = 2 ] || { echo "FAIL: $g with a failing awk should block with exit 2, got $rc: $out"; fail=1; }
+done
+rm -f "$RO_MODE_FILE"
+
 # The Read tool goes through credential-guard too: blocked without jq
 out="$(printf '%s' '{"tool_name":"Read","tool_input":{"file_path":"/tmp/notes.md"}}' | PATH="$NOJQ" "$ROOT/hooks/credential-guard/credential-guard.sh" 2>&1)"; rc=$?
 [ "$rc" = 2 ] || { echo "FAIL: credential-guard without jq should block the Read tool, got $rc: $out"; fail=1; }

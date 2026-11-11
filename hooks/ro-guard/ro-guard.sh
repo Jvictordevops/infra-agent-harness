@@ -47,7 +47,8 @@ if printf '%s' "$CMD" | grep -Eq 'ro[[:space:]]+mode[[:space:]]+off|ro-mode|RO_M
   block "Agents never switch read-only mode off."
 fi
 
-printf '%s\n' "$CMD" | awk '{ gsub(/&&|\|\||[;|&()`]|\$\(/, "\n"); print }' | {
+SEGS="$(printf '%s\n' "$CMD" | awk '{ gsub(/&&|\|\||[;|&()`]|\$\(/, "\n"); print }' 2>/dev/null)" || guard_broken_tool ro-guard awk
+printf '%s\n' "$SEGS" | {
   set -f
   while IFS= read -r seg; do
     # shellcheck disable=SC2086  # split the segment into words on purpose (globbing is off)
