@@ -180,6 +180,23 @@ hok "for f in a b; do echo \$f; done"
 hok "if ro gh pr list -R owner/repo; then echo ok; fi"
 hok "while true; do ro gh run list -R owner/repo; sleep 5; done"
 hok "watch -n 5 date"
+# Common parser (hooks/lib/cmdparse.awk): text that names a tool is not the tool...
+hok $'cat > notes.md <<EOF\nssh host\nEOF'
+hok "command -v aws"
+hok "source ./aws-env.sh"
+hok "git commit -m 'use the aws cli here'"
+hok "python3 -c 'import subprocess; subprocess.run([\"aws\", \"s3\", \"ls\"])'"   # code of a language is not looked into
+# ... and a tool behind a wrapper with options, a pipe to a shell or an exec is
+hno "sudo -u root aws s3 ls"
+hno "nice -n 5 aws s3 ls"
+hno "timeout -s KILL 5 ssh x"
+hno "find . -exec aws s3 ls {} \\;"
+hno "echo 'aws s3 ls' | bash"
+hno "echo x | xargs -n 1 aws s3 ls"
+hno $'bash <<EOF\nssh other id\nEOF'
+hno "env AWS_PROFILE=x aws s3 ls"
+deep="ssh x"; for _ in 1 2 3 4 5 6; do deep="bash -c $(printf '%q' "$deep")"; done
+hno "$deep"                                                                       # nested past 4 levels: blocks
 hno "az vm list"
 hno "gcloud compute instances list"
 hno "/usr/bin/scp a other:b"

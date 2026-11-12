@@ -48,6 +48,14 @@ for g in ro-guard credential-guard; do
   out="$(printf '%s' "$INPUT" | PATH="$BADAWK:$PATH" "$ROOT/hooks/$g/$g.sh" 2>&1)"; rc=$?
   [ "$rc" = 2 ] || { echo "FAIL: $g with a failing awk should block with exit 2, got $rc: $out"; fail=1; }
 done
+
+# The common parser needs its list of data commands (hooks/lib/cmdparse-data.txt): without it ro-guard blocks
+out="$(printf '%s' "$INPUT" | CMDP_DATAFILE="$TMP/no-such-list.txt" "$ROOT/hooks/ro-guard/ro-guard.sh" 2>&1)"; rc=$?
+[ "$rc" = 2 ] || { echo "FAIL: ro-guard without its list of data commands should block with exit 2, got $rc: $out"; fail=1; }
+# ... and an awk that prints something that is not a verdict is a broken tool, not a pass
+printf '#!/bin/sh\ncat >/dev/null\necho "garbage"\n' > "$BADAWK/awk"
+out="$(printf '%s' "$INPUT" | PATH="$BADAWK:$PATH" "$ROOT/hooks/ro-guard/ro-guard.sh" 2>&1)"; rc=$?
+[ "$rc" = 2 ] || { echo "FAIL: ro-guard with an awk that prints garbage should block with exit 2, got $rc: $out"; fail=1; }
 rm -f "$RO_MODE_FILE"
 
 # The Read tool goes through credential-guard too: blocked without jq

@@ -1,0 +1,16 @@
+# Commands whose arguments are text, not commands (cmdparse.awk class "data"). Words separated by blanks, any
+# number per line; # starts a comment. A guard that looks for commands inside arguments (block-destructive-platform)
+# skips these; ro-guard only looks at the command name and does not use the list.
+# Add a name only if its arguments never run anything: `awk 'BEGIN{system(…)}'` and `sed '…e'` are in the list on
+# purpose (decision of 2026-11-12, docs/threat-model.md), `find`, `xargs`, `ssh`, `sudo`, `env` are not.
+
+# search and print
+git grep egrep fgrep rg ag ack echo printf sed cat head tail less more wc sort uniq cut tr diff cmp
+# files and information
+ls stat file touch mkdir rm cp mv ln chmod chown jq yq basename dirname realpath readlink man help type
+which whereis hash test [ [[ date sleep true false read cd pushd popd export unset set alias unalias
+source . tee nl column fold paste join comm
+# shell syntax that reaches the parser as a word
+for case select function in fi done esac
+# the code of these languages, inline or in a heredoc, is data (limit: os.system('…') is not looked at)
+python perl ruby node nodejs php lua deno bun awk gawk mawk

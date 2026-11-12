@@ -6,6 +6,10 @@ A release is a tag `vX.Y.Z` on `main`. The tag, `version` in `.claude-plugin/plu
 
 ## [Unreleased]
 
+### Changed
+
+- `ro-guard` reads the command line with a common parser (`hooks/lib/cmdparse.awk`, one `awk` per command; the list of commands whose arguments are text is `hooks/lib/cmdparse-data.txt`). A forbidden tool named only as text no longer blocks (`git commit -m "use aws"`, `command -v aws`, `source ./aws-env.sh`, a heredoc to `cat`). Forms that got through now block: `sudo -u x`, `nice -n 5`, `timeout -s KILL 5` before a tool, `find -exec`, `echo '…' | bash`, `xargs -n 1`, and a command nested more than 4 levels deep. `bash file.sh` and `source file` are not inspected.
+
 ### Added
 
 - A `SessionStart` hook, `install-check`, tells the agent (once per session, in one line) when the `deny` and `Read(…)` rules that `link-harness` merges are missing from `~/.claude/settings.json`, with the command that fixes it. It is silent when the rules are there.
