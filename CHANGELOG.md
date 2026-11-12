@@ -6,7 +6,9 @@ A release is a tag `vX.Y.Z` on `main`. The tag, `version` in `.claude-plugin/plu
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- A `SessionStart` hook, `install-check`, tells the agent (once per session, in one line) when the `deny` and `Read(…)` rules that `link-harness` merges are missing from `~/.claude/settings.json`, with the command that fixes it. It is silent when the rules are there.
 
 ## [0.1.0] - 2026-11-11
 
