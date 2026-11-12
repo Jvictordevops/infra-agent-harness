@@ -5,6 +5,12 @@
         "hooks": [
           { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/stable-link/stable-link.sh\"" }
         ]
+      },
+      {
+        "matcher": "startup",
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/install-check/install-check.sh\"" }
+        ]
       }
     ],
     "PreToolUse": [
