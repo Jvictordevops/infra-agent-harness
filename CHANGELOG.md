@@ -9,6 +9,7 @@ A release is a tag `vX.Y.Z` on `main`. The tag, `version` in `.claude-plugin/plu
 ### Added
 
 - `bin/doctor --security [--no-network]`: the posture of the machine in one short run. Shows the profile, packs and environment; warns about read-only mode off, permission prompts turned off (`bypassPermissions`, `skipDangerousModePermissionPrompt`, `Bash(*)`) in the user, local and repo settings (FAIL under `strict`), and credential variables in the environment (names only, never values); shows the AWS role (`ro aws sts get-caller-identity`) and the Kubernetes permissions (`ro kubectl auth can-i --list`) of `RO_PROFILES` and `RO_CONTEXTS`. It does not check whether a role can write, and `ro` is unchanged.
+- Agents do not write the user's Claude Code settings, the harness configuration or the installed copy of the plugin. `ro-guard` blocks, in every mode, a redirection or a command that writes there (`>`, `>>`, `tee`, `cp`/`mv`/`ln`/`install`/`rsync`/`scp` to it, `rm`, `sed -i`, `touch`, `chmod`, `truncate`, `dd of=`…); reading, listing and naming them is fine. `hooks/settings.base.json` adds the matching `Edit` deny rules, and `bin/link-harness` adds one for the install directory when it is a plain directory. A harness installed as a git clone is where it is developed and is **not** protected (`bin/doctor` says so). The command parser reports the target of each redirection to the guards that ask for it (`cmd_redir`).
 
 ### Changed
 

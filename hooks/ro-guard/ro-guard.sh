@@ -13,6 +13,8 @@ set -uo pipefail
 . "$(dirname "$0")/../lib/fail-closed.sh"
 # shellcheck source=hooks/lib/cmdparse.sh
 . "$(dirname "$0")/../lib/cmdparse.sh"
+# shellcheck source=hooks/lib/protected.sh
+. "$(dirname "$0")/../lib/protected.sh"
 
 MODE="${RO_MODE_FILE:-$HOME/.config/infra-agent-harness/ro-mode}"
 INPUT="$(cat)"   # always read stdin: the caller may fail writing to a closed pipe
@@ -26,6 +28,20 @@ if printf '%s' "$CMD" | grep -Eq 'security-profile[[:space:]]+set|infra-agent-ha
   echo "ro-guard: agents never change the security profile. Show it with 'security-profile show'; only the user sets it ('security-profile set …' in a terminal, then link-harness)." >&2
   exit 2
 fi
+
+# Always, whatever the mode: agents do not WRITE the user's Claude Code settings, the harness configuration or the
+# installed copy of the plugin (hooks/lib/protected.sh). By action: reading or naming them is fine. A script written on
+# the fly is not inspected.
+CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // ""' 2>/dev/null)" || guard_bad_input ro-guard
+out="$(printf '%s\n' "$CMD" | CMDP_PROT="$(protected_list)" CMDP_HOME="$HOME" CMDP_CWD="$CWD" cmdparse_run "$(dirname "$0")/write-sink.awk" 2>/dev/null)" || guard_broken_tool ro-guard awk
+case "$out" in
+  '') ;;
+  B*)
+    log_decision ro-guard "$CMD" "protected path: ${out#B?}"
+    echo "ro-guard: agents do not write there (${out#B?}): the user's Claude Code settings, the harness configuration and the installed plugin are changed by the user, in a terminal. Reading them is fine. If a change is needed, give it to the user." >&2
+    exit 2 ;;
+  *) guard_broken_tool ro-guard awk ;;
+esac
 
 [ -f "$MODE" ] || exit 0
 # Core: other machines, GitHub, and the clouds without a pack (blocked by default). The packs add theirs
