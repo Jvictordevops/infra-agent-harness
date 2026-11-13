@@ -258,7 +258,7 @@ sandbox_messages() {
 
 merge_settings() {
   local base="$ROOT/hooks/settings.base.json" dst="$HOME/.claude/settings.json" new fresh=0 hroot="$ROOT" src
-  local plug=0 drop='[]' c perms prof r sb
+  local plug=0 drop='[]' c perms prof r sb lt
   # Plugin mode: $ROOT is the versioned cache directory, deleted some days after an update. Hook commands
   # (manual mode only) and the entries to remove use the stable link.
   if plugin_mode; then plug=1; hroot="$(stable_link)"; fi
@@ -266,6 +266,16 @@ merge_settings() {
   prof="$(profile_name)"
   perms="$(packs_profile_permissions "$ROOT" "$prof")" || { say "cannot read the deny/ask rules of the core and packs: settings not merged"; return 0; }
   sb="$(packs_sandbox "$ROOT" "$prof")" || { say "cannot read the sandbox of the core and packs: settings not merged"; return 0; }
+  # The installed copy of the plugin is not edited by agents: settings.base.json denies the plugin cache; here also the
+  # target of the stable link when it is a plain directory (not a git clone, where the harness is developed).
+  lt="$(cd "$(stable_link)" 2>/dev/null && pwd -P)" || lt=""
+  if [ -n "$lt" ] && [ ! -e "$lt/.git" ]; then
+    case "$lt" in
+      "$HOME"/.claude/plugins/cache/*) ;;
+      "$HOME"/*) perms="$(jq -c --arg r "Edit(~/${lt#"$HOME"/}/**)" '.deny += ([$r] - .deny)' <<<"$perms")" ;;
+      /*) perms="$(jq -c --arg r "Edit(/$lt/**)" '.deny += ([$r] - .deny)' <<<"$perms")" ;;
+    esac
+  fi
   src="$dst"
   if [ ! -s "$dst" ]; then
     fresh=1

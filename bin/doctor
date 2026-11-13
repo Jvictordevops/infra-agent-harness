@@ -34,6 +34,8 @@ HARNESS="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")")/
 . "$HARNESS/bin/lib/packs.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/profile.sh
 . "$HARNESS/bin/lib/profile.sh"
+# shellcheck source-path=SCRIPTDIR source=../hooks/lib/protected.sh
+. "$HARNESS/hooks/lib/protected.sh"
 REPO="${IAH_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
 
 if [ "$(uname)" = "Darwin" ]; then MACHINE=macos; elif grep -qi microsoft /proc/version 2>/dev/null; then MACHINE=wsl; else MACHINE=linux; fi
@@ -69,6 +71,11 @@ if plugin_mode; then
   else warn "stable link $sl missing (the SessionStart hook creates it when Claude Code starts a session)"; fi
 else
   ok "plugin mode: off (manual install)"
+fi
+
+# 1b2. Which copy of the harness agents cannot edit (hooks/lib/protected.sh)
+if protected_link_is_clone; then
+  ok "the installed harness is a git clone ($(readlink "$sl")): this machine develops the harness, so that copy is not protected against agent edits (changes go through PR and review); the plugin copy in ~/.claude/plugins/cache is"
 fi
 
 # 1c. Security profile (bin/security-profile): always shown

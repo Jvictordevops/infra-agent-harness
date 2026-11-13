@@ -6,7 +6,8 @@
 #
 # No awk recursion (portable to the awk of macOS): the lexer pushes the texts it finds inside a command
 # ($(…), `…`, bash -c, eval, ssh host '…', heredoc to a shell…) on a queue, and the driver lexes them in turn.
-# Every simple command, after dropping VAR=, shell keywords and wrappers (sudo -u x, timeout 5, nice -n 5…),
+# A sink may also see the target of each redirection with  function cmd_redir(depth, kind, target)  (kind in | out |
+# fd = '>&1'); a sink that does not care defines it empty. Every simple command, after dropping VAR=, shell keywords and wrappers (sudo -u x, timeout 5, nice -n 5…),
 # goes to cmd_seen(depth, kind, cls, n, V): V[1] is the command as typed, V[2..n] its arguments.
 #   kind top | sub ($(…) `…` <(…)) | sh (bash -c) | eval | ssh | su | watch | exec (find -exec) | pipe |
 #        heredoc | herestring | deep (nested past MAXD levels: the sink must block)
@@ -60,7 +61,7 @@ function addword() {
   inword = 0
   if (hdp) { hdp = 0; hdmk = hdmk (hdmk == "" ? "" : US) word; word = ""; return }
   if (hsp) { hsp = 0; hsb = hsb (hsb == "" ? "" : "\n") word; word = ""; return }
-  if (skipw) { skipw = 0; word = ""; return }
+  if (skipw) { skipw = 0; cmd_redir(CD, (rk == "fd" && word !~ /^[0-9]+-?$/) ? "out" : rk, word); word = ""; return }
   ws = ws (nw > 0 ? US : "") word; nw++; word = ""
 }
 function endsimple() {
@@ -114,7 +115,7 @@ function lex(t, d, k,   L, i, c, e, q) {
     if (c == "&" && e == ">") {   # &> file
       if (inword) addword()
       i++; if (substr(t, i + 1, 1) == ">") i++
-      skipw = 1; continue
+      skipw = 1; rk = "out"; continue
     }
     if (c == ";" || c == "&" || c == "|" || c == "(" || c == ")") {
       endsimple()
@@ -132,8 +133,8 @@ function lex(t, d, k,   L, i, c, e, q) {
       }
       if (e == "(") { i = subshell(t, i + 2); word = word "$()"; inword = 1; continue }   # <(…) >(…)
       if (c == ">" && (e == ">" || e == "|")) i++
-      else if (e == "&") i++
-      skipw = 1; continue
+      else if (e == "&") { i++; fdup = 1 }
+      skipw = 1; rk = (c == "<") ? "in" : (fdup ? "fd" : "out"); fdup = 0; continue
     }
     word = word c; inword = 1
   }
