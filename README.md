@@ -137,7 +137,7 @@ Planned, not implemented (do not rely on any of these):
 - `credential-guard` on the common command parser (`ro-guard` and `block-destructive-platform` already use it).
 - A warning at session start when `link-harness` has not been run.
 - Read-only mode per work repo instead of per machine.
-- `doctor --security`, environments (corporate and personal) and an IT managed policy.
+- Environments (corporate and personal) and an IT managed policy.
 - Packs for other clouds (GCP, Azure, on-prem).
 - Copilot hooks (today the hooks are registered for Claude Code only).
 - Container isolation (the `isolated` profile).

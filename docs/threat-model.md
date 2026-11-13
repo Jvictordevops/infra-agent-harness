@@ -91,7 +91,7 @@ All three read the command line before it runs (`credential-guard` as text, the 
 ## What to set up, in order
 
 1. A read-only role or profile for the agent. Everything else is a second line.
-2. Install, run `bin/link-harness`, then `bin/doctor` until it shows no `FAIL` ([guide.md](guide.md)).
+2. Install, run `bin/link-harness`, then `bin/doctor` until it shows no `FAIL` ([guide.md](guide.md)). Then `bin/doctor --security`: it shows the profile and the cloud role the agent uses, and warns about read-only mode off, permission prompts turned off in a settings file and credential variables in the environment (names only, never values). It does **not** check whether the role can write: use a read-only role.
 3. With an administrator role: `ro mode on` before the session, and leave it on.
 4. For unattended or long runs: the `strict` profile, with the session opened in the work repo.
 5. Look at the decision log now and then: a command blocked many times is either a rule to relax or a habit to correct.

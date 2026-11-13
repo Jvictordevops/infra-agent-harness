@@ -25,7 +25,7 @@ Generic notes for the agent tools the harness installs into (Claude Code, Claude
   - From Git Bash, prefix `MSYS_NO_PATHCONV=1` so it does not rewrite `/home/...` paths.
 - If the SSH agent lives in a password manager, keep it unlocked for push, pull and signed commits (`agent refused operation` usually means a locked vault).
 - Claude hooks (`hooks/*`) are registered in the profile inside WSL (`~/.claude/settings.json`); the Windows app profile only receives `CLAUDE.md` and the skills.
-- `bin/doctor` checks a machine in a few seconds and prints no secrets. It is read-only: it runs `link-harness --dry-run` and reports what `bin/link-harness` would change. `bin/doctor --tests` also runs the tests of the guards and the packs on that machine (a few minutes on WSL).
+- `bin/doctor` checks a machine in a few seconds and prints no secrets. It is read-only: it runs `link-harness --dry-run` and reports what `bin/link-harness` would change. `bin/doctor --tests` also runs the tests of the guards and the packs on that machine (a few minutes on WSL). `bin/doctor --security [--no-network]` is a separate, faster run (no `git fetch`) that checks the posture of the machine: profile and packs, read-only mode, sandbox under `strict`, permission prompts turned off in the settings the agent loads, credential variables in the environment (names only) and the AWS role and Kubernetes permissions the agent uses (shown through `ro`, which does not change). It exits 1 only on `FAIL`; every `WARN` says how to fix it.
 
 ## Read-only executors (`bin/ro`)
 
