@@ -41,7 +41,7 @@ function protected(raw,   p, i) {
   return ""
 }
 function chk(raw, how,   w) { w = protected(raw); if (w != "") hit(how " " w) }
-function cmd_redir(d, kind, target) { if (kind == "out") chk(target, "redirection to") }
+function cmd_redir(d, kind, target, lit) { if (kind == "out") chk(target, "redirection to") }
 function cmd_seen(d, k, cls, m, V,   b, j, inplace) {
   if (k == "deep") return
   b = base(V[1])
