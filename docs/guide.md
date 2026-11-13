@@ -161,7 +161,7 @@ The method in two pages: [method.md](method.md).
 
 1. Read the message: it names the guard and the reason.
 2. If the command is right, run it yourself in a terminal. That is the design: destructive commands and secrets go through a person.
-3. If the command only mentions a blocked one (a commit message, a `grep` pattern), ask the agent to write the text with its file tools instead of the shell. This is a known limit.
+3. If the command only mentions a blocked one in the arguments of a tool the parser does not know as text (`gh pr create --body "…"`), ask the agent to write the text with its file tools instead of the shell. This is a known limit (a commit message, a `grep` pattern or `echo` are not blocked).
 4. If a rule gets in the way every day, change the data, not the guard: the lists are in `packs/<name>/` and `hooks/credential-guard/` ([packs/README.md](../packs/README.md)). Tell us in an issue.
 
 ## Update and uninstall

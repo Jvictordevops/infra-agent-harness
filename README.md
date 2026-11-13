@@ -134,7 +134,7 @@ Used daily on WSL2 and macOS with Claude Code. Less tested: the two optional mod
 
 Planned, not implemented (do not rely on any of these):
 
-- One command parser for the three guards, so a command that only mentions a blocked one is not blocked.
+- `credential-guard` on the common command parser (`ro-guard` and `block-destructive-platform` already use it).
 - A warning at session start when `link-harness` has not been run.
 - Read-only mode per work repo instead of per machine.
 - `doctor --security`, environments (corporate and personal) and an IT managed policy.

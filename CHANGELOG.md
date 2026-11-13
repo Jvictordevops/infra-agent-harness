@@ -9,6 +9,7 @@ A release is a tag `vX.Y.Z` on `main`. The tag, `version` in `.claude-plugin/plu
 ### Changed
 
 - `ro-guard` reads the command line with a common parser (`hooks/lib/cmdparse.awk`, one `awk` per command; the list of commands whose arguments are text is `hooks/lib/cmdparse-data.txt`). A forbidden tool named only as text no longer blocks (`git commit -m "use aws"`, `command -v aws`, `source ./aws-env.sh`, a heredoc to `cat`). Forms that got through now block: `sudo -u x`, `nice -n 5`, `timeout -s KILL 5` before a tool, `find -exec`, `echo '…' | bash`, `xargs -n 1`, and a command nested more than 4 levels deep. `bash file.sh` and `source file` are not inspected.
+- `block-destructive-platform` reads the command line with the same parser: a destructive command named only as text no longer blocks (`git commit -m "avoid terraform destroy"`, `grep "kubectl delete"`, `echo`, `sed`, a heredoc to `cat` or `tee`, single quotes, comments, inline `python3 -c`). Forms that got through now block (`sudo -u x`, `nice -n 5`, `timeout 5`, `xargs -I{}`, `echo '…' | bash`, a heredoc or here-string to a shell, `find -exec`, `<(…)`, a command nested more than 4 levels deep). The rule files of the packs do not change. The arguments of a tool that is not on `hooks/lib/cmdparse-data.txt` (`gh pr create --body "…"`) are still searched.
 
 ### Added
 
