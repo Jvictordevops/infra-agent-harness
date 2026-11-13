@@ -31,8 +31,16 @@ bw_ready() {
     BW_SESSION="$(cat "$SESSION_FILE")"; export BW_SESSION; return 0   # trusted while fresh; if rejected: lock
   fi
   [ "$(bw status | jq -r .status)" = unauthenticated ] && die "not logged in: bw config server <your server url> && bw login"
-  echo "bitwarden: unlocking (master password, valid ${TTL_MIN} min)" >&2
-  BW_SESSION="$(bw unlock --raw)" || die "unlock failed"; export BW_SESSION
+  # The prompt of 'bw unlock --raw' is lost when its output is captured (it looks like a hang, and with key-backup the
+  # secret is on stdin): ask on the terminal ourselves and pass the password by environment variable, never in argv.
+  local tty="${IAH_BW_TTY:-/dev/tty}" pw=""
+  { [ -r "$tty" ] && [ -w "$tty" ]; } 2>/dev/null || die "no terminal to ask the master password: run 'bw unlock' yourself, or run this command from a terminal"
+  printf 'bitwarden: master password (the vault stays unlocked %s min): ' "$TTL_MIN" >> "$tty"
+  IFS= read -rs pw < "$tty" || true
+  printf '\n' >> "$tty"
+  [ -n "$pw" ] || die "no password given"
+  BW_SESSION="$(BW_PASSWORD="$pw" bw unlock --passwordenv BW_PASSWORD --raw)" || { pw=""; die "unlock failed (wrong password?)"; }
+  pw=""; export BW_SESSION
   ( umask 077; mkdir -p "$CONF"; printf '%s' "$BW_SESSION" > "$SESSION_FILE" )
 }
 get_note() { # $1 name -> note JSON (empty if missing); caches its id

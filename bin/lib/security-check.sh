@@ -68,6 +68,7 @@ security_checks() {
   # 4. Credentials in the environment of the agent (names only; compgen -e never prints values)
   local names="" n
   for n in $(compgen -e); do
+    case "$n" in CLAUDE_CODE_*) continue ;; esac   # variables of Claude Code itself, not the user's credentials
     case "$_SEC_ENV_NAMES" in *" $n "*) names="$names $n"; continue ;; esac
     case "$n" in *_TOKEN|*_SECRET|*_PASSWORD) names="$names $n" ;; esac
   done

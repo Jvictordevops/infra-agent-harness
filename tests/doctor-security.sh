@@ -62,6 +62,8 @@ reset; run --no-network; has "no creds" "no credential variables"
 AWS_SESSION_TOKEN="SECRET-VALUE-aaa" MY_API_SECRET="SECRET-VALUE-bbb" KUBECONFIG="SECRET-VALUE-ccc" DB_PASSWORD="SECRET-VALUE-ddd" run --no-network
 has "creds" "AWS_SESSION_TOKEN"; has "creds" "MY_API_SECRET"; has "creds" "KUBECONFIG"; has "creds" "DB_PASSWORD"; hasnt "creds" "SECRET-VALUE"
 AWS_REGION="eu-west-1" run --no-network; has "harmless var" "no credential variables"
+CLAUDE_CODE_MESSAGING_TOKEN="SECRET-VALUE-eee" CLAUDE_CODE_OAUTH_TOKEN="SECRET-VALUE-fff" run --no-network; has "Claude Code variables are not the user's" "no credential variables"; hasnt "Claude Code variables" "CLAUDE_CODE"
+CLAUDE_CODE_MESSAGING_TOKEN="SECRET-VALUE-eee" MY_API_TOKEN="SECRET-VALUE-ggg" run --no-network; has "own token still listed next to them" "MY_API_TOKEN"; hasnt "own token still listed next to them" "CLAUDE_CODE"
 
 # --- 5. role: shown, never judged
 reset; export RO_PROFILES="dev" RO_CONTEXTS="c1"; run --no-network; hasnt "no network" "AWS profile"; has "no network" "not looked at"; [ ! -f "$FAKE_RO_LOG" ] || ko "--no-network called ro"
