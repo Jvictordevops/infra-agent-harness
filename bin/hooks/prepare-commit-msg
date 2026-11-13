@@ -68,6 +68,16 @@ task_line() {
   fi
 }
 
+# in_head_roadmap <ROADMAP dir> <line>: 0 if a ROADMAP revision committed in HEAD has exactly that line
+in_head_roadmap() {
+  local f
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    git show "HEAD:$f" 2>/dev/null | tr -d '\r' | grep -qxF -- "$2" && return 0
+  done < <(git -c core.quotepath=off ls-tree --name-only HEAD "$1/" 2>/dev/null)
+  return 1
+}
+
 collect() {
   local path status line
   local re_roadmap='^work/[^/]+/[^/]+/ROADMAP/[^/]+\.md$'
@@ -88,6 +98,9 @@ collect() {
     while IFS= read -r line; do
       line="$(printf '%s' "$line" | tr -d '\r')"
       if [[ "$line" =~ $re_struck ]] || [[ "$line" =~ $re_wip ]]; then
+        # A new revision (or a renamed file) copies the old one: an item already written the same way in a
+        # ROADMAP revision of HEAD is not a change of this commit
+        case "$status" in A* | R*) in_head_roadmap "${path%/*}" "${line#+}" && continue ;; esac
         add "$path" "${BASH_REMATCH[1]}" "${BASH_REMATCH[3]}"
       fi
     done <<EOF

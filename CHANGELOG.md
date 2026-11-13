@@ -6,6 +6,17 @@ A release is a tag `vX.Y.Z` on `main`. The tag, `version` in `.claude-plugin/plu
 
 ## [Unreleased]
 
+### Fixed
+
+- `bin/evidence key-backup` with the Bitwarden backend showed no question and looked hung: the prompt of `bw unlock` was lost when its output is captured. The backend now asks the master password on the terminal and passes it to `bw` by environment variable (never in arguments, never printed or stored); with no terminal it says so.
+- `bin/hooks/prepare-commit-msg`: a new ROADMAP revision, which copies the old one, no longer adds a trailer for every struck or in-progress item it repeats; only items that change.
+- `tests/run` works from a plugin copy without `.git` (the stable link in plugin mode) and from any directory.
+- `bin/doctor --security` no longer lists the variables of Claude Code itself (`CLAUDE_CODE_*`) among the credential variables.
+
+### Documentation
+
+- Skills for Copilot CLI in plugin mode: only this harness's skills are linked; how to link your own.
+
 ### Added
 
 - `bin/doctor --security [--no-network]`: the posture of the machine in one short run. Shows the profile, packs and environment; warns about read-only mode off, permission prompts turned off (`bypassPermissions`, `skipDangerousModePermissionPrompt`, `Bash(*)`) in the user, local and repo settings (FAIL under `strict`), and credential variables in the environment (names only, never values); shows the AWS role (`ro aws sts get-caller-identity`) and the Kubernetes permissions (`ro kubectl auth can-i --list`) of `RO_PROFILES` and `RO_CONTEXTS`. It does not check whether a role can write, and `ro` is unchanged.

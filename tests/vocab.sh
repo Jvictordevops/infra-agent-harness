@@ -90,4 +90,17 @@ check "trailer (en)" '[ "$(trailer "" Task)" = "Task: demo 2.8 Vocabulary per la
 check "trailer (es)" '[ "$(trailer es Tarea)" = "Tarea: demo 2.8 Vocabulary per language" ]'
 check "trailer (es) ignores the English field" '[ "$(trailer es Task)" = "msg" ]'
 
+# A new ROADMAP revision copies the old one: only the items it changes get a trailer
+rm_repo="$TMP/repo-roadmap"; git init -q "$rm_repo"; printf 'language=en\n' > "$rm_repo/.harness.conf"
+rd="$rm_repo/work/acme/2030-01-01.demo/ROADMAP"; mkdir -p "$rd"
+printf -- '- ~~**1.1** Old done~~ Done.\n- **1.2** [~] Old in progress. x\n- **1.3** Open\n' > "$rd/2030-01-01.md"
+git -C "$rm_repo" add -A; git -C "$rm_repo" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q -m first
+rtrailers() { printf 'msg\n' > "$rm_repo/.git/MSG"; (cd "$rm_repo" && "$ROOT/bin/hooks/prepare-commit-msg" .git/MSG message); grep -c '^Task:' "$rm_repo/.git/MSG" || true; }
+cp "$rd/2030-01-01.md" "$rd/2030-01-02.md"; git -C "$rm_repo" add -A
+check "new revision, same items: no trailer" '[ "$(rtrailers)" = 0 ]'
+printf -- '- ~~**1.3** Open~~ Done now.\n' >> "$rd/2030-01-02.md"; git -C "$rm_repo" add -A
+check "new revision, one item struck: one trailer" '[ "$(rtrailers)" = 1 ] && grep -q "^Task: demo 1.3 Open" "$rm_repo/.git/MSG"'
+printf -- '- **1.2** [~] Old in progress. x\n' >> "$rd/2030-01-02.md"; git -C "$rm_repo" add -A
+check "an item repeated as it was is not new" '[ "$(rtrailers)" = 1 ]'
+
 if [ "$fail" = 0 ]; then echo "vocab: all tests passed"; else echo "vocab: tests FAILED"; exit 1; fi

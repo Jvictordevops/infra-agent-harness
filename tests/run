@@ -2,7 +2,9 @@
 # Run every test script: tests/*.sh, packs/*/tests.sh and modules/*/tests/*.sh. Same run as the CI.
 # Usage: tests/run [pattern]   (pattern filters by path, e.g. tests/run denylist)
 set -uo pipefail
-cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)" || exit 2
+# A plugin copy (the stable link in plugin mode) has no .git: the repository is then the parent of tests/
+top="$(git -C "$(dirname "$0")" rev-parse --show-toplevel 2>/dev/null)" || top="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$top" || exit 2
 
 failed=() n=0
 for t in tests/*.sh packs/*/tests.sh modules/*/tests/*.sh; do
