@@ -6,6 +6,10 @@ A release is a tag `vX.Y.Z` on `main`. The tag, `version` in `.claude-plugin/plu
 
 ## [Unreleased]
 
+### Added
+
+- `bin/doctor --security [--no-network]`: the posture of the machine in one short run. Shows the profile, packs and environment; warns about read-only mode off, permission prompts turned off (`bypassPermissions`, `skipDangerousModePermissionPrompt`, `Bash(*)`) in the user, local and repo settings (FAIL under `strict`), and credential variables in the environment (names only, never values); shows the AWS role (`ro aws sts get-caller-identity`) and the Kubernetes permissions (`ro kubectl auth can-i --list`) of `RO_PROFILES` and `RO_CONTEXTS`. It does not check whether a role can write, and `ro` is unchanged.
+
 ### Changed
 
 - `ro-guard` reads the command line with a common parser (`hooks/lib/cmdparse.awk`, one `awk` per command; the list of commands whose arguments are text is `hooks/lib/cmdparse-data.txt`). A forbidden tool named only as text no longer blocks (`git commit -m "use aws"`, `command -v aws`, `source ./aws-env.sh`, a heredoc to `cat`). Forms that got through now block: `sudo -u x`, `nice -n 5`, `timeout -s KILL 5` before a tool, `find -exec`, `echo '…' | bash`, `xargs -n 1`, and a command nested more than 4 levels deep. `bash file.sh` and `source file` are not inspected.
