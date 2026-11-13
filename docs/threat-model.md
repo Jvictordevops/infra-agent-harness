@@ -54,7 +54,7 @@ From the strongest to the weakest. "Where" says what to read or run.
 
 ### 4. The guards (hooks)
 
-All three read the command line as text, before it runs. They fail closed: without `jq`, or with an input they cannot parse, they block.
+All three read the command line before it runs (`credential-guard` as text, the other two with the common parser). They fail closed: without `jq`, or with an input they cannot parse, they block.
 
 | Guard | Stops | Does not stop |
 |---|---|---|
@@ -62,7 +62,7 @@ All three read the command line as text, before it runs. They fail closed: witho
 | `credential-guard` | A credential file given to a reader, a copy or a sender (`cat`, `cp`, `curl -T`…), `<` and `@file`; the output of a command that prints a secret when it would be shown or saved | A reader that is not on the list; `cd ~/.aws && cat credentials`; a path in a variable; a secret already in a variable or in the environment (`echo $TOKEN`, `env`) |
 | `ro-guard` (read-only mode on) | Cloud, cluster and remote tools outside `ro`, also behind `sudo -u x`, `timeout 5`, `nice -n 5`, `xargs`, `for … do`, `if`, `{ }`, `$(…)`, `bash -c`, `eval`, `ssh host '…'`, `watch`, `find -exec`, a heredoc or a pipe into a shell | A tool that is not on its list (`psql`, `vault`, `ansible`, an SDK in Python); a script file that calls the tool (`bash file.sh`, `source file`); the code of a language written inline (`python3 -c`); a command nested more than 4 levels deep is blocked, not read; variables or aliases used as the command name |
 
-Known cost: they also block a command that only **mentions** a blocked one, in a commit message, a `grep` pattern or a heredoc. Write that text with the file tools instead of the shell. A single parser for the three guards is planned.
+`ro-guard` and `block-destructive-platform` read the command line with a common parser (`hooks/lib/cmdparse.awk`), so a command that only **mentions** a blocked one (a commit message, a `grep` pattern, `echo`, a heredoc to `cat`) passes. Known costs: the arguments of a command that is not on the list of data commands (`hooks/lib/cmdparse-data.txt`) are still searched, so `gh pr create --body "… kubectl delete …"` blocks (write that text with the file tools); the code of `python`, `perl`, `ruby`, `node`, `php`, `lua`, `deno`, `bun` and `awk` is not looked into, so `python3 -c "os.system('kubectl delete x')"` passes (it is a script written on the fly, like `bash file.sh`); a command nested more than 4 levels deep is blocked. `credential-guard` still reads the line as text (task 7.22).
 
 ### 5. The read-only executor (`bin/ro`)
 
