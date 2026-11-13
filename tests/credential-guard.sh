@@ -80,11 +80,42 @@ find . -name '*.key' -exec cat {} \;
 scp 'host:~/.ssh/id_*' .
 rsync -a "host:~/.aws/cred*" .
 grep -c 'x.*' f.md && cat ~/.aws/credentials
+echo $(echo $(echo $(echo $(echo $(echo x)))))
+jq . ~/.aws/credentials
+jq '.key' ~/.aws/credentials
+jq '.key' < ~/.aws/credentials
+jq -f ~/.aws/credentials x.json
+jq -nf ~/.aws/credentials
+jq --rawfile x ~/.aws/credentials . f.json
+jq --slurpfile x ~/.ssh/id_rsa . f.json
+jq --from-file ~/.aws/credentials
+yq . ~/.kube/config
+yq 'load_str("~/.aws/credentials")'
+yq '.key' f.yaml
+sed p ~/.ssh/id_rsa
+sed -n 1p ~/.aws/credentials
+sed -e 's|a|b|' ~/.aws/credentials
+sed -f ~/.aws/credentials x
+sed "s|$HOME|~|" ~/.aws/credentials
+sed "s|a|b|" < ~/.aws/credentials
 EOF
 
 # --- Use, list, change mode, or not a credential: passes
 while IFS= read -r c; do [ -n "$c" ] && passes "$c"; done <<'EOF'
 ssh -i ~/.ssh/id_ed25519 host uptime
+jq '.key' f.json
+jq '.items[] | .key' f.json
+jq -r .key f.json
+jq '.secrets.key' x.json
+jq '{event: .key}' f.json
+jq --arg k v '.key' f.json
+jq -nr --argjson a 1 '.key' f.json
+sudo jq '.key' f.json
+dd if=/dev/zero of=.env
+grep x < "~/.aws/cred*"
+sed "s|$HOME|~|" f.txt
+sed -e "s|$HOME|~|" f.txt
+echo hi | sed "s|$HOME|~|"
 scp -i ~/.ssh/id_ed25519 file host:/tmp/
 scp -o IdentityFile=~/.ssh/id_ed25519 file host:/tmp/
 rsync -e "ssh -i ~/.ssh/id_ed25519" -a src/ host:dst/
