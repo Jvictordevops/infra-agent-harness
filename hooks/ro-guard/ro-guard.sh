@@ -3,7 +3,7 @@
 # machines are reached only through bin/ro: blocks aws/kubectl/helm/terraform/ssh… (core + packs) outside it, and
 # switching the mode off (only the user does it, from a terminal). No mode file -> only the next check runs.
 # In every mode it blocks changing the security profile (bin/security-profile set, the profile file).
-# Guards against mistakes, not against an adversary: a script written on the fly is not inspected.
+# Guards against mistakes, not against an adversary: a script written on the fly (bash file.sh, source) is not inspected.
 # Exit 2 = block (the reason goes to the agent on stderr). Without jq, or with an input it cannot parse, it
 # blocks too (hooks/lib/fail-closed.sh).
 set -uo pipefail
@@ -11,6 +11,8 @@ set -uo pipefail
 . "$(dirname "$0")/../lib/log-decision.sh"
 # shellcheck source=hooks/lib/fail-closed.sh
 . "$(dirname "$0")/../lib/fail-closed.sh"
+# shellcheck source=hooks/lib/cmdparse.sh
+. "$(dirname "$0")/../lib/cmdparse.sh"
 
 MODE="${RO_MODE_FILE:-$HOME/.config/infra-agent-harness/ro-mode}"
 INPUT="$(cat)"   # always read stdin: the caller may fail writing to a closed pipe
@@ -47,29 +49,11 @@ if printf '%s' "$CMD" | grep -Eq 'ro[[:space:]]+mode[[:space:]]+off|ro-mode|RO_M
   block "Agents never switch read-only mode off."
 fi
 
-SEGS="$(printf '%s\n' "$CMD" | awk '{ gsub(/&&|\|\||[;|&()`]|\$\(/, "\n"); print }' 2>/dev/null)" || guard_broken_tool ro-guard awk
-printf '%s\n' "$SEGS" | {
-  set -f
-  while IFS= read -r seg; do
-    # shellcheck disable=SC2086  # split the segment into words on purpose (globbing is off)
-    set -- $seg
-    while [ $# -gt 0 ]; do # drop env assignments, wrappers and shell keywords to reach the real command
-      case "$1" in
-        [A-Za-z_]*=*|sudo|env|command|exec|time|nohup|nice|xargs|-*) shift ;;
-        '{'|'}'|'!'|if|then|else|elif|do|while|until) shift ;;   # for p in a b; do <tool> …; done · if <tool> …
-        timeout) shift; [ $# -gt 0 ] && shift ;;
-        *) break ;;
-      esac
-    done
-    [ $# -gt 0 ] || continue
-    base="${1##*/}"
-    case "$1" in bin/ro|*/bin/ro) continue ;; esac
-    if printf '%s' "$base" | grep -Eqx "$FORBIDDEN"; then
-      block "'$base' outside bin/ro."
-    fi
-    case "$base" in
-      bash|sh|zsh|dash|ksh|eval|source|.|watch)
-        if printf '%s' "$seg" | grep -Eqw "$FORBIDDEN"; then block "'$base' running a forbidden command."; fi ;;
-    esac
-  done
-}
+# Every simple command of the line (also inside $(…), bash -c, eval, ssh host '…', watch, find -exec, a heredoc
+# to a shell…), found by the common parser; the sink (ro-sink.awk) blocks a forbidden name outside bin/ro.
+out="$(printf '%s\n' "$CMD" | CMDP_FORB="$FORBIDDEN" cmdparse_run "$(dirname "$0")/ro-sink.awk" 2>/dev/null)" || guard_broken_tool ro-guard awk
+case "$out" in
+  '') ;;
+  B*) block "${out#B?}" ;;
+  *) guard_broken_tool ro-guard awk ;;
+esac
