@@ -4,10 +4,9 @@ What each layer of the harness stops, what it does not, and what you should add 
 
 ## In one minute
 
-- The harness stops **mistakes**: an agent that runs a destructive command, reads a credential file or calls the cloud outside the read-only path because it seemed a good idea.
-- It does not stop an **adversary**: an agent that is set on going around it (because a page or a file it read told it to, or because it "fixes" what blocks it) can do so.
-- The barrier that holds against both is not in this repo: **the credential you give the agent**. With a read-only role, nothing here has to be perfect.
-- Use the layers together. Each one is cheap to go around on its own.
+- The table in the [README](../README.md#what-it-protects-and-what-it-doesnt) says in one screen what each layer stops. This page is the detail behind it.
+- The harness stops **mistakes**, not an **adversary**: an agent set on going around it (because a page it read told it to, or because it "fixes" what blocks it) can do so.
+- The barrier that holds against both is **the credential you give the agent**. With a read-only role, nothing here has to be perfect.
 
 ## What we protect
 

@@ -1,6 +1,6 @@
 # Guide: install and first day
 
-One path from nothing to an agent working read-only against your infrastructure. One step at a time: each step says what to run and what you should see. Reference detail is in [tools.md](tools.md) and [packs/README.md](../packs/README.md); the limits are in [threat-model.md](threat-model.md).
+One path from nothing to an agent working read-only against your infrastructure. One step at a time: each step says what to run and what you should see. Reference detail is in [tools.md](tools.md) and [packs/README.md](../packs/README.md); what it covers at a glance is the table in the [README](../README.md#what-it-protects-and-what-it-doesnt) and the limits are in [threat-model.md](threat-model.md).
 
 About 30 minutes. You need Linux, macOS or WSL2, with `bash`, `git` and `jq`. `gitleaks` is needed for the commit hook of your work repo.
 
@@ -115,7 +115,7 @@ ro aws eks list-clusters --profile dev --region eu-west-1
 ro kubectl get pods -A --context dev
 ```
 
-- Anything else (`aws …`, `kubectl …`, `terraform …`, `ssh …` typed directly) is blocked while the mode is on.
+- Anything else typed directly (`aws …`, `ssh …`) is blocked while the mode is on.
 - Only you switch it off, from a terminal: `ro mode off`. The agent is blocked from doing it.
 - `ro` is an allow-list of read verbs, not an IAM policy: read "The read-only executor" in the [threat model](threat-model.md#5-the-read-only-executor-binro).
 
