@@ -8,9 +8,9 @@
 #   R<TAB>flag<TAB>piece<TAB>lit    a piece of the target of '<' (read), same fields: blocks on its own
 #   K<TAB>line                      a line of the secret-commands files (SEC_FILES) whose anchor is in the
 #                                   command line (sec_check_line looks only at those)
-# The first argument of jq and the script of sed are a program, not a path: they are not reported (jq '.key'
-# is not a *.key file, sed "s|$HOME|~|" does not read ~). The files they read still are (jq . f, sed p f,
-# jq -f f, jq --rawfile n f, sed -f f). yq is not exempt: its filter can read files (load("…")).
+# The first argument of jq is a program, not a path: it is not reported (jq '.key' is not a *.key file). The
+# files it reads still are (jq . f, jq -f f, jq --rawfile n f). sed and yq are not exempt: their program can
+# read files (sed 1r f, R f) or run commands (e), yq load("…"). So sed "s|$HOME|~|" still blocks, as in main.
 # Environment: CRED_ANCHORS (one per line), CRED_HOME, SEC_FILES (one path per line).
 
 # Quick filter: only pieces that could be a credential path go to the shell side (an unquoted glob in raw, a bare
@@ -25,26 +25,19 @@ function maybe(p, raw,   i) {
 # The anchors come in the environment: the awk of macOS refuses a newline in a -v value
 BEGIN { home = ENVIRON["CRED_HOME"]; nanch = split(ENVIRON["CRED_ANCHORS"], anch, "\n"); if (anch[nanch] == "") nanch-- }
 
-# EX[j] = 1 for the words of V[2..n] that are the program of jq or sed. Options that take a value are skipped
+# EX[j] = 1 for the word of V[2..n] that is the program of jq. Options that take a value are skipped
 # (jq: --arg, --argjson, --slurpfile, --rawfile take a name and a value; --indent, -L one; -f/--from-file one,
-# and then there is no program among the positionals. sed: -e/--expression is the program, -f/--file is not).
+# and then there is no program among the positionals).
 function program_words(b, n, V,   j, w, given) {
   split("", EX); given = 0
-  if (b != "jq" && b != "sed") return
+  if (b != "jq") return
   for (j = 2; j <= n; j++) {
     w = V[j]
     if (w == "--") { if (!given && j < n) EX[j + 1] = 1; return }
     if (w !~ /^-./) { if (!given) EX[j] = 1; return }
-    if (b == "jq") {
-      if (w ~ /^--(arg|argjson|slurpfile|rawfile)$/) { j += 2; continue }
-      if (w == "--from-file" || w ~ /^-[A-Za-z]*f$/) { given = 1; j++; continue }
-      if (w == "--indent" || w == "--library-path" || w ~ /^-[A-Za-z]*L$/) { j++; continue }
-    } else {
-      if (w == "--expression" || w ~ /^-[A-Za-z]*e$/) { given = 1; if (j < n) EX[j + 1] = 1; j++; continue }
-      if (w ~ /^--expression=/ || w ~ /^-e./) { given = 1; EX[j] = 1; continue }
-      if (w == "--file" || w ~ /^-[A-Za-z]*f$/) { given = 1; j++; continue }
-      if (w == "-l" || w == "--line-length") { j++; continue }
-    }
+    if (w ~ /^--(arg|argjson|slurpfile|rawfile)$/) { j += 2; continue }
+    if (w == "--from-file" || w ~ /^-[A-Za-z]*f$/) { given = 1; j++; continue }
+    if (w == "--indent" || w == "--library-path" || w ~ /^-[A-Za-z]*L$/) { j++; continue }
   }
 }
 
