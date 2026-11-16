@@ -50,6 +50,20 @@ Full detail and more diagrams: [docs/architecture.md](docs/architecture.md).
 - **Modules** (`modules/`): `evidence` (shared evidence store, encrypted archives), `two-machine` (architect and executor on two machines).
 - **Tools**: `bin/doctor` (checks a machine, read-only), `bin/denylist-scan` (used by this repo's own contributor hook and CI; `--history` checks every commit, `--quiet` never prints the matching text).
 
+## What it protects and what it doesn't
+
+Mistakes, not an adversary. From the strongest layer to the weakest; "You do" is what you must set up (usually nothing). Detail: [threat model](docs/threat-model.md).
+
+| Layer | Stops | Does not stop | You do |
+|---|---|---|---|
+| Read-only credential | Every cloud write, whatever runs | Reads of data the role can read | Give the agent a read-only role |
+| `strict` profile (sandbox) | Writes outside the session folder, unlisted domains, credential files, also from a script | `ro`; a session opened in your home | Optional, for unattended runs: `security-profile set strict` |
+| Read-only mode (`ro`, `ro-guard`) | `aws s3 ls` typed outside `bin/ro` while the mode is on | A tool not on its list (`psql`); a script that calls the tool | With an admin role: `ro mode on`, once |
+| `block-destructive-platform` | `kubectl delete pod x`, `terraform destroy`, anywhere in the line | A destructive command not on the list; the same call from a script or SDK | Nothing |
+| `credential-guard` | `cat ~/.aws/credentials`, `curl -T ~/.netrc`, `gh auth token` on the screen | `cd ~/.aws && cat credentials`; a secret already in a variable (`echo $TOKEN`) | Nothing: using a credential (`ssh -i`) passes |
+| Protected files (`ro-guard`, `deny`) | The agent writing `~/.claude/settings.json`, the security profile or the installed plugin | A clone loaded for development; a person with access to your machine | Run `link-harness` once: plugins cannot ship the `deny` rules |
+| After the fact | Nothing: it records every block (`hook-decisions.jsonl`) and `gitleaks` stops a secret in a commit | What ran | `gitleaks` installed |
+
 ## Quick start
 
 ### As a Claude Code plugin (main path)
@@ -134,7 +148,6 @@ Used daily on WSL2 and macOS with Claude Code. Less tested: the two optional mod
 
 Planned, not implemented (do not rely on any of these):
 
-- `credential-guard` on the common command parser (`ro-guard` and `block-destructive-platform` already use it).
 - A warning at session start when `link-harness` has not been run.
 - Read-only mode per work repo instead of per machine.
 - Environments (corporate and personal) and an IT managed policy.
