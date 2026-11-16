@@ -148,7 +148,6 @@ Used daily on WSL2 and macOS with Claude Code. Less tested: the two optional mod
 
 Planned, not implemented (do not rely on any of these):
 
-- `credential-guard` on the common command parser (`ro-guard` and `block-destructive-platform` already use it).
 - A warning at session start when `link-harness` has not been run.
 - Read-only mode per work repo instead of per machine.
 - Environments (corporate and personal) and an IT managed policy.
