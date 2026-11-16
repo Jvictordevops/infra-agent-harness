@@ -15,6 +15,7 @@ A release is a tag `vX.Y.Z` on `main`. The tag, `version` in `.claude-plugin/plu
 
 ### Documentation
 
+- Plugin icon (`assets/icon.png`, `assets/icon.svg`) and `icon` in `.claude-plugin/plugin.json`; the Anthropic plugin directory shows it.
 - Skills for Copilot CLI in plugin mode: only this harness's skills are linked; how to link your own.
 
 ### Added
