@@ -71,7 +71,7 @@ reset; run; has "no RO_PROFILES" "RO_PROFILES is empty"; has "no RO_CONTEXTS" "R
 reset; export RO_PROFILES="dev,prod"; run
 has "role shown" "AWS profile 'dev' uses 'reader'"; has "role shown 2" "AWS profile 'prod' uses 'reader'"; has "not checked" "Whether it can write is not checked"
 hasnt "account id" "123456789012"; grep -q "sts get-caller-identity --profile dev" "$FAKE_RO_LOG" || ko "ro not called for dev"
-[ "$(wc -l < "$FAKE_RO_LOG")" = 2 ] || ko "ro calls: $(wc -l < "$FAKE_RO_LOG"), expected 2 (AWS only; no RO_CONTEXTS)"
+n="$(( $(wc -l < "$FAKE_RO_LOG") ))"; [ "$n" = 2 ] || ko "ro calls: $n, expected 2 (AWS only; no RO_CONTEXTS)"   # $(( )): the wc of macOS pads with spaces
 reset; export RO_PROFILES="broken"; run; has "ro fails" "AWS profile 'broken': the role could not be shown"; [ "$RC" = 0 ] || ko "ro fails: exit $RC"
 reset; export RO_PROFILES="dev"; FAKE_ROLE="admin" run; has "admin role is only shown" "uses 'admin'"; hasnt "admin role is only shown" "FAIL"
 # nothing in the check calls anything but sts get-caller-identity and kubectl auth can-i

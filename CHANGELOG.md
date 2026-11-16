@@ -6,6 +6,10 @@ A release is a tag `vX.Y.Z` on `main`. The tag, `version` in `.claude-plugin/plu
 
 ## [Unreleased]
 
+### Fixed
+
+- `tests/doctor-security.sh` compared the output of `wc -l` as text; the `wc` of macOS pads it with spaces, so the macOS job failed on the `v0.2.0` tag. Only the test changes; the plugin is the same as in 0.2.0.
+
 ## [0.2.0] - 2026-11-16
 
 This release is for Claude Code only: the guards, `ro` and the skills work with Claude Code; Copilot CLI gets the skills and the instructions, not the guards. Copilot hooks and the Copilot adapter come in v0.3.
