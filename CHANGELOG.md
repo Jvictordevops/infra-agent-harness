@@ -6,6 +6,22 @@ A release is a tag `vX.Y.Z` on `main`. The tag, `version` in `.claude-plugin/plu
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-16
+
+This release is for Claude Code only: the guards, `ro` and the skills work with Claude Code; Copilot CLI gets the skills and the instructions, not the guards. Copilot hooks and the Copilot adapter come in v0.3.
+
+### Added
+
+- `bin/doctor --security [--no-network]`: the posture of the machine in one short run. Shows the profile, packs and environment; warns about read-only mode off, permission prompts turned off (`bypassPermissions`, `skipDangerousModePermissionPrompt`, `Bash(*)`) in the user, local and repo settings (FAIL under `strict`), and credential variables in the environment (names only, never values); shows the AWS role (`ro aws sts get-caller-identity`) and the Kubernetes permissions (`ro kubectl auth can-i --list`) of `RO_PROFILES` and `RO_CONTEXTS`. It does not check whether a role can write, and `ro` is unchanged.
+- Agents do not write the user's Claude Code settings, the harness configuration or the installed copy of the plugin. `ro-guard` blocks, in every mode, a redirection or a command that writes there (`>`, `>>`, `tee`, `cp`/`mv`/`ln`/`install`/`rsync`/`scp` to it, `rm`, `sed -i`, `touch`, `chmod`, `truncate`, `dd of=`…); reading, listing and naming them is fine. `hooks/settings.base.json` adds the matching `Edit` deny rules, and `bin/link-harness` adds one for the install directory when it is a plain directory. A harness installed as a git clone is where it is developed and is **not** protected (`bin/doctor` says so). The command parser reports the target of each redirection to the guards that ask for it (`cmd_redir`).
+- A `SessionStart` hook, `install-check`, tells the agent (once per session, in one line) when the `deny` and `Read(…)` rules that `link-harness` merges are missing from `~/.claude/settings.json`, with the command that fixes it. It is silent when the rules are there.
+
+### Changed
+
+- `credential-guard` reads the command line with the common parser too (`hooks/credential-guard/cred-sink.awk`); its own parser is gone. The program of `jq` (its first argument) is no longer taken for a path: `jq '.key' f.json` (a `*.key` file to the old parser) passes; the files it reads are still checked (`jq . ~/.aws/credentials`, `jq -f`, `--rawfile`, `--slurpfile`, `< file`). `sed` and `yq` are not exempt: a `sed` program can read (`1r`, `R`) and run (`e`) and a `yq` filter can load files, so `sed "s|$HOME|~|" f.txt` still blocks (a known false positive). A command nested more than 4 levels deep now blocks, as in the other guards. The parser gains `VL` (words with their quoted globs marked) and a fourth argument of `cmd_redir`; the other sinks do not use them.
+- `ro-guard` reads the command line with a common parser (`hooks/lib/cmdparse.awk`, one `awk` per command; the list of commands whose arguments are text is `hooks/lib/cmdparse-data.txt`). A forbidden tool named only as text no longer blocks (`git commit -m "use aws"`, `command -v aws`, `source ./aws-env.sh`, a heredoc to `cat`). Forms that got through now block: `sudo -u x`, `nice -n 5`, `timeout -s KILL 5` before a tool, `find -exec`, `echo '…' | bash`, `xargs -n 1`, and a command nested more than 4 levels deep. `bash file.sh` and `source file` are not inspected.
+- `block-destructive-platform` reads the command line with the same parser: a destructive command named only as text no longer blocks (`git commit -m "avoid terraform destroy"`, `grep "kubectl delete"`, `echo`, `sed`, a heredoc to `cat` or `tee`, single quotes, comments, inline `python3 -c`). Forms that got through now block (`sudo -u x`, `nice -n 5`, `timeout 5`, `xargs -I{}`, `echo '…' | bash`, a heredoc or here-string to a shell, `find -exec`, `<(…)`, a command nested more than 4 levels deep). The rule files of the packs do not change. The arguments of a tool that is not on `hooks/lib/cmdparse-data.txt` (`gh pr create --body "…"`) are still searched.
+
 ### Fixed
 
 - `bin/evidence key-backup` with the Bitwarden backend showed no question and looked hung: the prompt of `bw unlock` was lost when its output is captured. The backend now asks the master password on the terminal and passes it to `bw` by environment variable (never in arguments, never printed or stored); with no terminal it says so.
@@ -17,21 +33,7 @@ A release is a tag `vX.Y.Z` on `main`. The tag, `version` in `.claude-plugin/plu
 
 - Plugin icon (`assets/icon.png`, `assets/icon.svg`) and `icon` in `.claude-plugin/plugin.json`; the Anthropic plugin directory shows it.
 - Skills for Copilot CLI in plugin mode: only this harness's skills are linked; how to link your own.
-
-### Added
-
-- `bin/doctor --security [--no-network]`: the posture of the machine in one short run. Shows the profile, packs and environment; warns about read-only mode off, permission prompts turned off (`bypassPermissions`, `skipDangerousModePermissionPrompt`, `Bash(*)`) in the user, local and repo settings (FAIL under `strict`), and credential variables in the environment (names only, never values); shows the AWS role (`ro aws sts get-caller-identity`) and the Kubernetes permissions (`ro kubectl auth can-i --list`) of `RO_PROFILES` and `RO_CONTEXTS`. It does not check whether a role can write, and `ro` is unchanged.
-- Agents do not write the user's Claude Code settings, the harness configuration or the installed copy of the plugin. `ro-guard` blocks, in every mode, a redirection or a command that writes there (`>`, `>>`, `tee`, `cp`/`mv`/`ln`/`install`/`rsync`/`scp` to it, `rm`, `sed -i`, `touch`, `chmod`, `truncate`, `dd of=`…); reading, listing and naming them is fine. `hooks/settings.base.json` adds the matching `Edit` deny rules, and `bin/link-harness` adds one for the install directory when it is a plain directory. A harness installed as a git clone is where it is developed and is **not** protected (`bin/doctor` says so). The command parser reports the target of each redirection to the guards that ask for it (`cmd_redir`).
-
-### Changed
-
-- `credential-guard` reads the command line with the common parser too (`hooks/credential-guard/cred-sink.awk`); its own parser is gone. The program of `jq` (its first argument) is no longer taken for a path: `jq '.key' f.json` (a `*.key` file to the old parser) passes; the files it reads are still checked (`jq . ~/.aws/credentials`, `jq -f`, `--rawfile`, `--slurpfile`, `< file`). `sed` and `yq` are not exempt: a `sed` program can read (`1r`, `R`) and run (`e`) and a `yq` filter can load files, so `sed "s|$HOME|~|" f.txt` still blocks (a known false positive). A command nested more than 4 levels deep now blocks, as in the other guards. The parser gains `VL` (words with their quoted globs marked) and a fourth argument of `cmd_redir`; the other sinks do not use them.
-- `ro-guard` reads the command line with a common parser (`hooks/lib/cmdparse.awk`, one `awk` per command; the list of commands whose arguments are text is `hooks/lib/cmdparse-data.txt`). A forbidden tool named only as text no longer blocks (`git commit -m "use aws"`, `command -v aws`, `source ./aws-env.sh`, a heredoc to `cat`). Forms that got through now block: `sudo -u x`, `nice -n 5`, `timeout -s KILL 5` before a tool, `find -exec`, `echo '…' | bash`, `xargs -n 1`, and a command nested more than 4 levels deep. `bash file.sh` and `source file` are not inspected.
-- `block-destructive-platform` reads the command line with the same parser: a destructive command named only as text no longer blocks (`git commit -m "avoid terraform destroy"`, `grep "kubectl delete"`, `echo`, `sed`, a heredoc to `cat` or `tee`, single quotes, comments, inline `python3 -c`). Forms that got through now block (`sudo -u x`, `nice -n 5`, `timeout 5`, `xargs -I{}`, `echo '…' | bash`, a heredoc or here-string to a shell, `find -exec`, `<(…)`, a command nested more than 4 levels deep). The rule files of the packs do not change. The arguments of a tool that is not on `hooks/lib/cmdparse-data.txt` (`gh pr create --body "…"`) are still searched.
-
-### Added
-
-- A `SessionStart` hook, `install-check`, tells the agent (once per session, in one line) when the `deny` and `Read(…)` rules that `link-harness` merges are missing from `~/.claude/settings.json`, with the command that fixes it. It is silent when the rules are there.
+- README: one table of what the harness protects and what it does not (one row per layer: what it stops, what it does not, what you do), checked with a case per row against the hooks. The threat model and the guide link to it.
 
 ## [0.1.0] - 2026-11-11
 
