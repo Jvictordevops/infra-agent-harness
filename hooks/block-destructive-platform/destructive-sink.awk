@@ -15,4 +15,4 @@ function cmd_seen(d, k, cls, m, V,   s, j) {
   s = join(V, 1, m, US)
   for (j = 1; j <= NRULE; j++) if (s ~ RX[j]) hit(RN[j])
 }
-function cmd_redir(d, kind, target) { }   # redirections are not looked at
+function cmd_redir(d, kind, target, lit) { }   # redirections are not looked at

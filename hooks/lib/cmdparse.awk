@@ -6,8 +6,11 @@
 #
 # No awk recursion (portable to the awk of macOS): the lexer pushes the texts it finds inside a command
 # ($(…), `…`, bash -c, eval, ssh host '…', heredoc to a shell…) on a queue, and the driver lexes them in turn.
-# A sink may also see the target of each redirection with  function cmd_redir(depth, kind, target)  (kind in | out |
-# fd = '>&1'); a sink that does not care defines it empty. Every simple command, after dropping VAR=, shell keywords and wrappers (sudo -u x, timeout 5, nice -n 5…),
+# A sink may also see the target of each redirection with  function cmd_redir(depth, kind, target, lit)  (kind in | out |
+# fd = '>&1'); a sink that does not care defines it empty. A sink that must tell a glob typed bare from one
+# typed inside quotes (grep 'x.*') reads VL[1..n], set before each cmd_seen: the word as typed with its quoted
+# or escaped * ? [ as \001 \002 \003 (V holds them as plain characters); lit is the same for a redirection target.
+# Every simple command, after dropping VAR=, shell keywords and wrappers (sudo -u x, timeout 5, nice -n 5…),
 # goes to cmd_seen(depth, kind, cls, n, V): V[1] is the command as typed, V[2..n] its arguments.
 #   kind top | sub ($(…) `…` <(…)) | sh (bash -c) | eval | ssh | su | watch | exec (find -exec) | pipe |
 #        heredoc | herestring | deep (nested past MAXD levels: the sink must block)
@@ -15,6 +18,8 @@
 #        opaque = anything else: the arguments may hold a command
 function base(s,   n, a) { sub(/\/+$/, "", s); n = split(s, a, "/"); return n ? a[n] : s }
 function join(A, from, to, sep,   k, o) { o = ""; for (k = from; k <= to; k++) o = o (k > from ? sep : "") A[k]; return o }
+function lit(c) { return c == "*" ? "\001" : c == "?" ? "\002" : c == "[" ? "\003" : c }
+function unlit(s) { gsub("\001", "*", s); gsub("\002", "?", s); gsub("\003", "[", s); return s }
 function push(t, d, k) { qn++; QT[qn] = t; QD[qn] = d; QK[qn] = k; QW[qn] = 0 }
 function pushw(t, d, k) { push(t, d, k); QW[qn] = 1 }
 function hit(why) { print "B\t" why; exit 0 }
@@ -59,9 +64,9 @@ function tick(t, i,   j) { j = close_tick(t, i + 1); push(substr(t, i + 1, j - i
 
 function addword() {
   inword = 0
-  if (hdp) { hdp = 0; hdmk = hdmk (hdmk == "" ? "" : US) word; word = ""; return }
-  if (hsp) { hsp = 0; hsb = hsb (hsb == "" ? "" : "\n") word; word = ""; return }
-  if (skipw) { skipw = 0; cmd_redir(CD, (rk == "fd" && word !~ /^[0-9]+-?$/) ? "out" : rk, word); word = ""; return }
+  if (hdp) { hdp = 0; hdmk = hdmk (hdmk == "" ? "" : US) unlit(word); word = ""; return }
+  if (hsp) { hsp = 0; hsb = hsb (hsb == "" ? "" : "\n") unlit(word); word = ""; return }
+  if (skipw) { skipw = 0; cmd_redir(CD, (rk == "fd" && word !~ /^[0-9]+-?$/) ? "out" : rk, unlit(word), word); word = ""; return }
   ws = ws (nw > 0 ? US : "") word; nw++; word = ""
 }
 function endsimple() {
@@ -97,15 +102,15 @@ function lex(t, d, k,   L, i, c, e, q) {
   skipw = 0; hsp = 0; hdp = 0; hdmk = ""; hsb = ""; HQn = 0; PTn = 0; pipesh = 0
   for (i = 1; i <= L; i++) {
     c = substr(t, i, 1); e = substr(t, i + 1, 1)
-    if (q == "'") { if (c == "'") q = ""; else word = word c; continue }
+    if (q == "'") { if (c == "'") q = ""; else word = word lit(c); continue }
     if (q == "\"") {
       if (c == "\\") { if (e ~ /["\\$`]/) { word = word e; i++ } else word = word c; continue }
       if (c == "\"") { q = ""; continue }
       if (c == "$" && e == "(") { i = subshell(t, i + 2); word = word "$()"; continue }
       if (c == "`") { i = tick(t, i); word = word "$()"; continue }
-      word = word c; continue
+      word = word lit(c); continue
     }
-    if (c == "\\") { if (i < L) { i++; if (e != "\n") { word = word e; inword = 1 } } ; continue }
+    if (c == "\\") { if (i < L) { i++; if (e != "\n") { word = word lit(e); inword = 1 } } ; continue }
     if (c == "'" || c == "\"") { q = c; inword = 1; continue }
     if (c == "#" && !inword) { while (i < L && substr(t, i + 1, 1) != "\n") i++; continue }
     if (c == "$" && e == "(") { i = subshell(t, i + 2); word = word "$()"; inword = 1; continue }
@@ -157,8 +162,9 @@ function wrap_skip(W, n, s, b,   j, o) {
   return j
 }
 
-function command(cws, hs, hb, d, k,   n, W, s, w, b, lb, m, V, j, cls, e, found) {
+function command(cws, hs, hb, d, k,   n, W, RW, s, w, b, lb, m, V, j, cls, e, found) {
   n = split(cws, W, US)
+  for (j = 1; j <= n; j++) { RW[j] = W[j]; W[j] = unlit(W[j]) }
   s = 1
   while (s <= n) {
     w = W[s]
@@ -172,7 +178,7 @@ function command(cws, hs, hb, d, k,   n, W, s, w, b, lb, m, V, j, cls, e, found)
   }
   if (s > n) return
   b = base(W[s]); m = n - s + 1
-  for (j = 1; j <= m; j++) V[j] = W[s + j - 1]
+  for (j = 1; j <= m; j++) { V[j] = W[s + j - 1]; VL[j] = RW[s + j - 1] }
   lb = (b ~ /^python[0-9.]+$/) ? "python" : b   # python3, python3.12…
   cls = (lb in DATA) ? "data" : "opaque"
   cmd_seen(d, k, cls, m, V)
@@ -211,7 +217,7 @@ function command(cws, hs, hb, d, k,   n, W, s, w, b, lb, m, V, j, cls, e, found)
 { buf = buf (NR > 1 ? "\n" : "") $0 }
 END {
   if (broken) exit 2
-  gsub(/\037/, " ", buf)
+  gsub(/[\001-\003\037]/, " ", buf)
   push(buf, 0, "top")
   while (qi < qn) {
     qi++

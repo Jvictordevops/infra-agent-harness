@@ -19,6 +19,7 @@ blocks() { local rc; rc="$(bash_rc "$1")"; [ "$rc" = 2 ] || ko "should block (rc
 passes() { local rc; rc="$(bash_rc "$1")"; [ "$rc" = 0 ] || ko "should pass (rc $rc): $1"; }
 
 # --- Read, copy or send: blocked
+# (the last three sed lines are a known false positive, as in main: a sed program can read (r, R), run (e) and write (w), so it is not exempt)
 while IFS= read -r c; do [ -n "$c" ] && blocks "$c"; done <<'EOF'
 cat ~/.aws/credentials
 cat $HOME/.aws/credentials
@@ -80,11 +81,46 @@ find . -name '*.key' -exec cat {} \;
 scp 'host:~/.ssh/id_*' .
 rsync -a "host:~/.aws/cred*" .
 grep -c 'x.*' f.md && cat ~/.aws/credentials
+echo $(echo $(echo $(echo $(echo $(echo x)))))
+jq . ~/.aws/credentials
+jq '.key' ~/.aws/credentials
+jq '.key' < ~/.aws/credentials
+jq -f ~/.aws/credentials x.json
+jq -nf ~/.aws/credentials
+jq --rawfile x ~/.aws/credentials . f.json
+jq --slurpfile x ~/.ssh/id_rsa . f.json
+jq --from-file ~/.aws/credentials
+yq . ~/.kube/config
+yq 'load_str("~/.aws/credentials")'
+yq '.key' f.yaml
+sed p ~/.ssh/id_rsa
+sed -n 1p ~/.aws/credentials
+sed -e 's|a|b|' ~/.aws/credentials
+sed -f ~/.aws/credentials x
+sed "s|$HOME|~|" ~/.aws/credentials
+sed "s|a|b|" < ~/.aws/credentials
+sed '1r ~/.ssh/id_rsa' notes.txt
+sed -e '1r ~/.aws/credentials' notes.txt
+sed 'R ~/.ssh/id_rsa' notes.txt
+sed '1e cat ~/.ssh/id_rsa' notes.txt
+sed "s|$HOME|~|" f.txt
+sed -e "s|$HOME|~|" f.txt
+echo hi | sed "s|$HOME|~|"
 EOF
 
 # --- Use, list, change mode, or not a credential: passes
 while IFS= read -r c; do [ -n "$c" ] && passes "$c"; done <<'EOF'
 ssh -i ~/.ssh/id_ed25519 host uptime
+jq '.key' f.json
+jq '.items[] | .key' f.json
+jq -r .key f.json
+jq '.secrets.key' x.json
+jq '{event: .key}' f.json
+jq --arg k v '.key' f.json
+jq -nr --argjson a 1 '.key' f.json
+sudo jq '.key' f.json
+dd if=/dev/zero of=.env
+grep x < "~/.aws/cred*"
 scp -i ~/.ssh/id_ed25519 file host:/tmp/
 scp -o IdentityFile=~/.ssh/id_ed25519 file host:/tmp/
 rsync -e "ssh -i ~/.ssh/id_ed25519" -a src/ host:dst/

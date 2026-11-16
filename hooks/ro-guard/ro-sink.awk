@@ -6,4 +6,4 @@ function cmd_seen(d, k, cls, m, V,   b) {
   b = base(V[1])
   if (b ~ ("^(" ENVIRON["CMDP_FORB"] ")$")) hit("'" b "' outside bin/ro.")
 }
-function cmd_redir(d, kind, target) { }   # redirections are not looked at
+function cmd_redir(d, kind, target, lit) { }   # redirections are not looked at
